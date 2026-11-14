@@ -1,0 +1,22 @@
+DAILY SILVER 2.0 — SUMMIT EDITION
+
+UPDATING EXISTING GAME:
+1. Copy the files from daily-silver-2-0-update-files.zip over your current project.
+2. Keep assets/sprites/crystal/front/ and back/ — they are NOT included in the ZIP.
+3. Run PLAY-ON-WINDOWS.bat (Node.js 18+). Refresh browser with Ctrl+Shift+R.
+
+NEW SOURCE COPY:
+1. Extract daily-silver-2-0-full-source.zip.
+2. Run PLAY-ON-WINDOWS.bat to download necessary Crystal sprites once.
+3. The browser opens at http://localhost:4182 . Then everything works offline.
+
+OPTIONAL COMPLETE NATIONAL DEX (251):
+  Run EXPAND-TO-251-WINDOWS.bat once with internet; generates offline roster
+  from PokéAPI and downloads additional Crystal artwork. Not included by default.
+
+GAME:
+  Arrow-free menu; 1–4 attacks, P opens party, press SKIP FX for rapid play.
+  OPTIONS controls animation speed and volume. Hall of Fame includes replay.
+
+No database, no PHP, no subscriptions. Personal, unofficial fan project.
+Read README.md for mechanics and intellectual-property limitations.

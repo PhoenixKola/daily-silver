@@ -1,0 +1,18 @@
+DAILY SILVER 2.0 — INSTALL IN YOUR EXISTING PROJECT
+
+1. CLOSE the game and its terminal.
+2. BACK UP your current daily-silver folder just in case.
+3. Unzip DAILY-SILVER-2.0-UPDATE.zip and copy the files over the same matching paths in daily-silver.
+4. ALLOW overwrite of index.html, src/*.js, src/style.css, service-worker.js, scripts etc.
+5. DO NOT DELETE the existing assets/sprites/crystal/front/ or .../back/ folders.
+6. Double-click PLAY-ON-WINDOWS.bat and let the local game load.
+7. Ctrl+Shift+R once to refresh old cached HTML, scripts and service worker.
+8. OPTIONAL: EXPAND-TO-251-WINDOWS.bat installs the 116 missing species and their sprites
+   using your internet connection. The included default is the tested 135-species roster.
+
+SAVES: The original localStorage prefix daily-silver-v1 is preserved. Don't clear browser
+site data if you want to keep your battles, streaks, and records.
+
+NO DATABASE. NODE 18+. NETWORK ONLY FOR ONE-TIME ART / OPTIONAL ROSTER DOWNLOAD.
+
+PLEASE READ README.md for technical accuracy limitations and copyright information.
