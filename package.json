@@ -1,6 +1,6 @@
 {
   "name": "daily-silver",
-  "version": "3.0.0",
+  "version": "4.0.0",
   "private": true,
   "type": "module",
   "description": "Local-first unofficial Gen II-inspired daily battle game with original procedural effects and optional PokéAPI roster expansion",
@@ -13,11 +13,12 @@
     "expand-roster": "node tools/expand-roster.mjs",
     "art:audit": "node tools/audit-sprites.mjs",
     "browser:install": "playwright install chromium",
-    "uat:visual": "node tools/visual-uat.mjs",
-    "uat:playthrough": "node tools/playthrough-uat.mjs",
-    "uat:victory": "node tools/victory-uat.mjs",
-    "uat:offline": "node tools/offline-uat.mjs",
-    "uat:gallery": "node tools/gallery-uat.mjs"
+    "uat:visual": "node tools/uat.mjs visual",
+    "uat:playthrough": "node tools/uat.mjs playthrough",
+    "uat:victory": "node tools/uat.mjs victory",
+    "uat:offline": "node tools/uat.mjs offline",
+    "manifest": "node tools/manifest.mjs",
+    "art:generate": "node tools/art-generate.mjs"
   },
   "engines": {
     "node": ">=18"

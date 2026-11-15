@@ -1,26 +1,122 @@
-<!doctype html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#1a203a"><meta name="description" content="Daily Silver — a standalone retro daily battle challenge. Six allies. One summit. One chance each day."><link rel="icon" href="./assets/art/daily-silver-mark-96.png" type="image/png"><link rel="manifest" href="./manifest.webmanifest"><title>Daily Silver — The summit remembers.</title><link rel="stylesheet" href="./src/style.css"><link rel="stylesheet" href="./src/cockpit.css"></head>
-<body><div class="noise" aria-hidden="true"></div>
-<div class="shell">
-<header class="topbar"><a class="brand" href="#" id="brand" aria-label="Daily Silver home"><span class="brand-icon" aria-hidden="true"><img src="./assets/art/daily-silver-mark-96.png" alt=""></span><span class="brand-text"><strong>DAILY</strong><span>SILVER</span></span></a><div class="nav-actions"><span class="top-status"><span class="status-light" aria-hidden="true"></span><span class="nav-hash" id="daily-number">DAILY 0000</span><small><span id="today-label">04 NOV 2026</span> &middot; UTC RESET</small></span><button class="nav-button" id="how-button" title="Open field guide"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5h6a3 3 0 0 1 3 3v11a3 3 0 0 0-3-3H4zM20 5.5h-4a3 3 0 0 0-3 3v11a3 3 0 0 1 3-3h4z"/></svg><span class="nav-label">FIELD GUIDE</span></button><button class="nav-button nav-sound" id="sound-button" title="Toggle audio" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10v4h4l5 4V6l-5 4zM16 9a5 5 0 0 1 0 6m2-9a9 9 0 0 1 0 12"/></svg><span class="nav-label">AUDIO OFF</span></button><button class="nav-button" id="settings-button" title="Options" aria-label="Settings and accessibility"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9m4 0h3M4 17h3m4 0h9M13 4v6M7 14v6"/></svg><span class="nav-label">OPTIONS</span></button><button class="nav-button nav-records" id="records-button" title="Open archive" aria-label="View records"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14v16l-7-4-7 4zM8 8h8m-8 3h8"/></svg><span class="nav-label">ARCHIVE</span></button></div></header>
-<div class="eyebrow-strip"><span>FIELD NOTES <strong>002—SNOWFALL</strong></span><span>LOCAL TIME CAPSULE · UTC</span><span class="strip-right">NO SERVERS · NO SECOND CHANCES</span></div>
-<main>
-<section id="home-view" class="home-view" aria-label="Daily Silver landing screen">
-<div class="hero-experience">
-  <div class="home-intro">
-    <div class="hero-dispatch"><span class="dispatch-spark" aria-hidden="true">✦</span><span>DAILY CHALLENGE</span><span class="dispatch-date" id="home-date-label">04 NOV 2026</span><span class="dispatch-line" aria-hidden="true"></span><span class="dispatch-edition">FIELD RECORD / <span id="issue-number">ISSUE 000</span></span></div>
-    <div class="hero-serial" aria-hidden="true"><span>THE SILVER ARCHIVES</span><span>VOL. 02 — THE LAST ENCOUNTER</span></div>
-    <h1><span class="title-first">THE SUMMIT</span><em>remembers<span class="title-stop">.</span></em></h1>
-    <p class="intro-copy">Your six have arrived. Red is waiting above the clouds.<br><span>Meet your team below. Then write the ending.</span></p>
-    <div class="home-cta-row"><button id="daily-button" class="button-primary"><span class="play-icon">▶</span> BEGIN TODAY'S BATTLE <span class="button-arrow">↗</span></button><button id="practice-button" class="button-secondary">FREE PRACTICE <span>→</span></button></div>
-    <p class="micro-note" id="daily-note">A new randomized team arrives every day at 00:00 UTC.</p>
-    <div class="hero-credentials" aria-label="Game rules"><div><span class="credential-symbol">✧</span><span><strong>06 × 06</strong><small>THE FINAL MATCH</small></span></div><div><span class="credential-symbol">↺</span><span><strong>NEW EACH DAY</strong><small>SAME SUMMIT. NEW FATE.</small></span></div><div><span class="credential-symbol">◈</span><span><strong>OFFLINE FIRST</strong><small>YOUR LEGACY IS LOCAL</small></span></div></div>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0a1226">
+<meta name="description" content="Daily Silver: six allies, one moonlit summit, one daily battle.">
+<link rel="icon" href="./assets/art/daily-silver-mark-96.png" type="image/png">
+<link rel="manifest" href="./manifest.webmanifest">
+<title>Daily Silver</title>
+<link rel="stylesheet" href="./src/ui.css">
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+ <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4.5v15l12-7.5z"/></symbol>
+ <symbol id="i-flask" viewBox="0 0 24 24"><path d="M9 3h6M10 3v6l-5.5 9.5A2 2 0 0 0 6.2 21h11.6a2 2 0 0 0 1.7-2.5L14 9V3M7.5 15h9"/></symbol>
+ <symbol id="i-book" viewBox="0 0 24 24"><path d="M5 4.5h10a3 3 0 0 1 3 3V20H8a3 3 0 0 1-3-3zM8 8h7M8 11.5h7"/></symbol>
+ <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.6 2.2c-.8.5-1.1 1-1.1 1.8M12 17h.01"/></symbol>
+ <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 7h9m4 0h3M4 17h3m4 0h9M13 4v6M7 14v6"/></symbol>
+ <symbol id="i-sound" viewBox="0 0 24 24"><path d="M4 10v4h4l5 4V6l-5 4zM16.5 9a4.5 4.5 0 0 1 0 6M19 6.5a8 8 0 0 1 0 11"/></symbol>
+ <symbol id="i-mute" viewBox="0 0 24 24"><path d="M4 10v4h4l5 4V6l-5 4zM17 9.5l4 5M21 9.5l-4 5"/></symbol>
+ <symbol id="i-swap" viewBox="0 0 24 24"><path d="M5 8h13l-3.5-3.5M19 16H6l3.5 3.5"/></symbol>
+ <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 7.5h.01"/></symbol>
+ <symbol id="i-list" viewBox="0 0 24 24"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></symbol>
+ <symbol id="i-back" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></symbol>
+ <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+ <symbol id="i-skip" viewBox="0 0 24 24"><path d="M5 5l8 7-8 7zM14 5l8 7-8 7z"/></symbol>
+ <symbol id="i-undo" viewBox="0 0 24 24"><path d="M9 7L4 12l5 5M4 12h10a6 6 0 0 1 0 12"/></symbol>
+ <symbol id="i-retry" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.5-5.8M20 4v5h-5"/></symbol>
+ <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 4v11M7 11l5 5 5-5M5 20h14"/></symbol>
+ <symbol id="i-pause" viewBox="0 0 24 24"><path d="M8 5v14M16 5v14"/></symbol>
+ <symbol id="i-prev" viewBox="0 0 24 24"><path d="M18 5v14M16 12L6 5v14z"/></symbol>
+ <symbol id="i-next" viewBox="0 0 24 24"><path d="M6 5v14M8 12l10-7v14z"/></symbol>
+ <symbol id="i-fist" viewBox="0 0 24 24"><path d="M12 3l2 5 5-2-2 5 5 2-5 2 2 5-5-2-2 5-2-5-5 2 2-5-5-2 5-2-2-5 5 2z"/></symbol>
+ <symbol id="i-swirl" viewBox="0 0 24 24"><path d="M12 12m-1 0a1 1 0 1 0 2 0a1 1 0 1 0-2 0M12 8a4 4 0 1 1-4 4M12 4a8 8 0 1 1-8 8"/></symbol>
+ <symbol id="i-dot" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.5"/><circle cx="12" cy="12" r="8"/></symbol>
+</svg>
+<a class="skip-link" href="#main">Skip to the game</a>
+<div id="app" data-view="home">
+ <header class="bar">
+  <button id="brand" class="brand" type="button" aria-label="Daily Silver, back to start"><img src="./assets/art/daily-silver-mark-96.png" alt="" width="28" height="28"><span>DAILY <b>SILVER</b></span></button>
+  <p class="bar-title" id="bar-title" aria-live="off"></p>
+  <nav class="bar-actions" aria-label="Game menu">
+   <button id="journal-button" class="icon-btn" type="button" hidden aria-label="Battle journal and replay"><svg><use href="#i-list"/></svg></button>
+   <button id="archive-button" class="icon-btn" type="button" aria-label="Archive and records"><svg><use href="#i-book"/></svg></button>
+   <button id="help-button" class="icon-btn" type="button" aria-label="How to play"><svg><use href="#i-help"/></svg></button>
+   <button id="sound-button" class="icon-btn" type="button" aria-pressed="false" aria-label="Sound off"><svg><use href="#i-mute"/></svg></button>
+   <button id="settings-button" class="icon-btn" type="button" aria-label="Settings"><svg><use href="#i-sliders"/></svg></button>
+  </nav>
+ </header>
+ <main id="main">
+  <div class="stage-frame" id="stage-frame">
+   <canvas id="stage-canvas" width="768" height="398" role="img" aria-label="Moonlit mountain summit battlefield"></canvas>
+   <div class="home-overlay" id="home-overlay">
+    <p class="kicker" id="home-kicker">Daily 0000</p>
+    <h1>The summit<br>is waiting.</h1>
+   </div>
+   <div class="hud" id="hud" hidden>
+    <div class="plate plate-foe" id="plate-foe"></div>
+    <div class="plate plate-ally" id="plate-ally"></div>
+    <p class="outcome" id="outcome" role="status" aria-live="off"></p>
+   </div>
+   <div class="intro-card" id="intro-card" hidden></div>
+   <button class="skip-fab" id="skip-fab" type="button" hidden><svg><use href="#i-skip"/></svg><span id="skip-label">Skip</span></button>
   </div>
-<div class="home-scene-wrap" aria-label="Animated Mt. Silver summit preview"><div class="scene-orbit" aria-hidden="true"></div><div class="frame-lines" aria-hidden="true"><span>CH. 02 / MT. SILVER</span><span>GROUND LEVEL // ∞</span></div><div class="scene-container" id="scene-container"><canvas id="battle-canvas" width="768" height="398" aria-label="A pixel-art snow-covered summit"></canvas><div class="home-scene-label" id="home-scene-label"><span class="scene-vertical">SILENCE ABOVE THE CLOUDS</span><span class="scene-quote"><span class="scene-pulse">◈</span><small>THE CHALLENGER AWAITS</small></span></div><div class="battle-hud hidden" id="battle-hud"><div class="enemy-ui"><div class="hud-heading"><b id="enemy-name">PIKACHU</b><span id="enemy-level">LV.81</span></div><div class="hud-life"><span class="hp-label">HP</span><div class="life-track"><div id="enemy-hp" class="life-fill"></div></div><span class="hp-numeral" id="enemy-count">6/6</span></div><div id="enemy-status" class="status-tags"></div></div><div class="player-ui"><div class="hud-heading"><b id="player-name">YOUR HERO</b><span id="player-level">LV.81</span></div><div class="hud-life"><span class="hp-label">HP</span><div class="life-track"><div id="player-hp" class="life-fill"></div></div><span class="hp-numeral" id="player-count">100/100</span></div><div id="player-status" class="status-tags"></div></div></div></div><div class="scene-footer"><span>◈ VISUAL RECORD / 02</span><span id="scene-caption">THE LEGEND DOESN'T RESET.</span><span>▰ ▰ ▱ ▱</span></div><div class="home-squad" aria-label="Today's team preview"><div class="home-squad-heading"><span><b>TODAY'S SIX</b><small>SELECT AN ALLY TO PREVIEW</small></span><span class="home-squad-focus" id="home-spotlight-name">FIRST ALLY</span></div><div class="home-squad-list" id="hero-preview-party"></div></div></div>
+  <section class="panel" id="panel-home" aria-label="Start">
+   <div class="cta">
+    <button id="daily-button" class="btn btn-primary" type="button"><svg><use href="#i-play"/></svg><span id="daily-label">Begin today's battle</span></button>
+    <button id="practice-button" class="btn btn-secondary" type="button"><svg><use href="#i-flask"/></svg><span>Practice lab</span></button>
+    <button id="result-link" class="btn btn-quiet" type="button" hidden><span>View today's result</span></button>
+    <p class="note" id="daily-note"></p>
+   </div>
+   <div class="team" aria-label="Today's team">
+    <p class="team-label"><span>Today's six</span><span class="team-hint">Tap an ally to inspect</span></p>
+    <ul class="team-list" id="team-list"></ul>
+   </div>
+  </section>
+  <section class="panel" id="panel-battle" aria-label="Battle controls" hidden>
+   <div class="command">
+    <div class="command-head">
+     <p class="command-state" id="command-state">Choose a move</p>
+     <div class="command-tools" id="lab-tools" hidden>
+      <span class="badge">Lab</span>
+      <button class="chip-btn" id="lab-undo" type="button"><svg><use href="#i-undo"/></svg>Undo</button>
+      <button class="chip-btn" id="lab-retry" type="button"><svg><use href="#i-retry"/></svg>Retry</button>
+      <button class="chip-btn" id="lab-compare" type="button">Compare</button>
+     </div>
+     <button class="chip-btn chip-strong" id="party-button" type="button"><svg><use href="#i-swap"/></svg><span>Party</span></button>
+    </div>
+    <div class="moves" id="moves" role="group" aria-label="Moves"></div>
+    <p class="lab-notes" id="lab-notes" hidden></p>
+   </div>
+  </section>
+  <section class="panel" id="panel-replay" aria-label="Replay controls" hidden>
+   <div class="replay">
+    <div class="replay-row">
+     <button class="icon-btn" id="rp-prev" type="button" aria-label="Previous knockout"><svg><use href="#i-prev"/></svg></button>
+     <button class="icon-btn icon-big" id="rp-play" type="button" aria-label="Play"><svg><use href="#i-play"/></svg></button>
+     <button class="icon-btn" id="rp-next" type="button" aria-label="Next knockout"><svg><use href="#i-next"/></svg></button>
+     <label class="select-wrap"><span class="sr-only">Playback speed</span><select id="rp-speed"><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option></select></label>
+     <button class="chip-btn" id="rp-decisive" type="button">Decisive exchange</button>
+     <button class="chip-btn" id="rp-download" type="button"><svg><use href="#i-down"/></svg>File</button>
+     <button class="chip-btn" id="rp-exit" type="button">Exit</button>
+    </div>
+    <div class="timeline" id="timeline"><input id="rp-scrub" type="range" min="0" max="0" value="0" aria-label="Replay position"><div class="timeline-marks" id="rp-marks" aria-hidden="true"></div></div>
+    <p class="note" id="rp-status"></p>
+    <ul class="ko-list" id="rp-kos" aria-label="Knockouts"></ul>
+   </div>
+  </section>
+  <section class="panel panel-results" id="panel-results" aria-label="Result" hidden>
+   <div class="result" id="result-body"></div>
+  </section>
+ </main>
 </div>
-<div class="overview-grid"><div class="overview-block" data-mark="01"><span class="block-kicker">01 / YOUR INHERITANCE</span><h2>SIX STRANGERS.<br>ONE LAST CHANCE.</h2><p>Each morning, a different team of six. Their moves, their held items, their fate. You decide what they do next.</p><div class="mini-party" id="preview-party"></div></div><div class="overview-block" data-mark="02"><span class="block-kicker">02 / THE CHALLENGER</span><h2>THE SAME SIX.<br>EVERY SINGLE DAY.</h2><p>On the icy summit, one legendary trainer waits with his iconic team. The challenge changes. The opponent doesn't.</p><div class="opponent-preview"><span class="opponent-mark">R</span><div><b>TRAINER RED</b><small>6 REMAINING · NO MERCY</small></div><span class="star-fade">✳</span></div></div><div class="overview-block" data-mark="03"><span class="block-kicker">03 / THE RULES</span><h2>NO DO-OVERS.<br>JUST TOMORROW.</h2><p>One official daily attempt. Unlimited practice. Your wins, losses, and streaks stay saved on this device.</p><div class="mini-stats"><div><b id="stat-wins">00</b><small>VICTORIES</small></div><div><b id="stat-streak">00</b><small>BEST STREAK</small></div><div><b id="stat-played">00</b><small>DAILY RUNS</small></div></div></div></div></section>
-<section id="game-view" class="game-view hidden" aria-label="Battle"><div class="battle-top"><div><span class="block-kicker" id="run-kicker">DAILY CHALLENGE / 001</span><h2>THE FINAL <em>ENCOUNTER.</em></h2></div><div class="battle-meta"><span>TURN <strong id="turn-number">01</strong></span><span>TEAM <strong id="team-number">06 / 06</strong></span><button class="exit-button" id="leave-button" aria-label="Leave battle">↖ EXIT TO MENU</button></div></div><div class="battle-frame"><div class="ascent"><div class="ascent-heading"><span>SUMMIT ASCENT / RED'S SIX</span><span id="ascent-stage">I / STILLNESS</span><strong id="ascent-count">0 OF 6 CLEARED</strong></div><ol class="ascent-track" id="ascent-track" aria-label="Opponent progression"></ol></div><div id="battle-scene-slot"></div><div class="battle-scene-marker"><span>◆ MT. SILVER</span><span>LIVE BATTLE SIGNAL</span></div><div class="battle-roster" aria-label="Battle team progress"><div class="roster-side"><span class="roster-label">YOUR TEAM</span><div class="roster-pips" id="ally-roster"></div></div><span class="roster-versus" aria-hidden="true">VS</span><div class="roster-side roster-rival"><span class="roster-label">RED'S TEAM</span><div class="roster-pips" id="rival-roster"></div></div></div></div>
-<div class="battle-dashboard"><div class="action-area"><div class="action-header"><span class="block-kicker" id="command-kicker">CHOOSE YOUR NEXT MOVE</span><button class="toggle-party" id="party-toggle">⇄ VIEW PARTY</button></div><div id="active-command-card" class="active-command-card" aria-label="Active Pokémon"></div><div id="moves-panel" class="moves-grid"></div><div id="party-panel" class="party-grid hidden"></div><div class="battle-help"><span>KEYS <kbd>1</kbd>–<kbd>4</kbd> TO ATTACK</span><span><kbd>P</kbd> TO SWITCH</span><span id="active-item">HELD ITEM — NONE</span><span id="fx-speed-indicator" aria-live="off">FX ×1</span></div></div><div class="dialog-area"><div class="dialog-header"><span>✥ TURN RECAP</span><span id="round-label">LOG_001</span></div><div class="dialog-content" id="battle-log" aria-live="polite"></div><div class="dialog-quote"><span>✦</span> EVERY MOVE CHANGES THE ENDING.</div></div></div></section>
-<section id="result-view" class="result-view hidden"><div class="result-visual"><span class="result-sigil" id="result-sigil">✦</span><span class="block-kicker" id="result-tag">SAVE FILE COMPLETE</span><h2 id="result-title">THE SUMMIT IS YOURS.</h2><p id="result-description">Your story has been written in the snow.</p><div class="result-stats"><div><b id="result-turns">00</b><small>TURNS</small></div><div><b id="result-left">00</b><small>SURVIVORS</small></div><div><b id="result-score">0000</b><small>SCORE</small></div></div><div id="result-moment" class="result-moment" aria-label="Decisive battle moment"></div><div id="result-party" class="result-party"></div><div class="result-actions"><button id="share-button" class="button-primary">COPY BATTLE RESULT ↗</button><button id="result-card" class="button-secondary">SAVE RESULT CARD ↓</button><button id="result-recap" class="button-secondary">REVIEW THE BATTLE &rarr;</button><button id="result-practice" class="button-secondary">PRACTICE AGAIN →</button><button id="result-home" class="button-secondary">BACK TO SUMMIT ↖</button></div><small id="result-note">Official records stay on this browser only.</small></div></section>
-</main><footer class="footer"><div class="footer-brand">DAILY<span>SILVER</span><small> AN UNOFFICIAL LOCAL FAN EXPERIMENT</small></div><div>BUILT FOR THE JOY OF TURN-BASED STRATEGY. <span>NO ACCOUNTS. LOCAL FIRST. NO TRACKERS.</span></div><div class="footer-last">© ORIGINAL UI & SCENERY · POKÉMON ART © ITS OWNERS</div></footer></div>
-<dialog id="modal" class="modal"><div class="modal-top"><span class="block-kicker" id="modal-kicker">FIELD GUIDE</span><button id="modal-close" aria-label="Close dialog">✕</button></div><div id="modal-body"></div></dialog>
-<script type="module" src="./src/app.js"></script></body></html>
+<dialog id="sheet" class="sheet" aria-labelledby="sheet-title">
+ <div class="sheet-head"><h2 id="sheet-title">Sheet</h2><button id="sheet-close" class="icon-btn" type="button" aria-label="Close"><svg><use href="#i-close"/></svg></button></div>
+ <div class="sheet-body" id="sheet-body"></div>
+</dialog>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<script type="module" src="./src/app.js"></script>
+</body>
+</html>

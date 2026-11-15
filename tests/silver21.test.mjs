@@ -49,6 +49,7 @@ test('reject malformed imports, dates and hostile record payloads',()=>{
 });
 test('service worker caches only Daily Silver keys, ships with new backup module',async()=>{
  const content=await readFile(new URL('../service-worker.js',import.meta.url),'utf8');
- assert.match(content,/startsWith\(PREFIX\)/);assert.match(content,/backup\.js/);
+ assert.match(content,/startsWith\(PREFIX\)/);
+ assert.ok(JSON.parse(await readFile(new URL('../core-manifest.json',import.meta.url),'utf8')).files.includes('./src/backup.js'));
  assert.match(content,/await fetch\(e\.request\)/);
 });

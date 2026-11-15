@@ -3,6 +3,7 @@ import {join,resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {SPECIES} from '../src/data.js';
 import {dexNumber} from '../src/sprites.js';
+import {writeManifest} from './manifest.mjs';
 const root=resolve(fileURLToPath(new URL('../',import.meta.url))),out=join(root,'dist');
 const pngSignature=Buffer.from([137,80,78,71,13,10,26,10]);
 let absent=[];
@@ -18,8 +19,9 @@ if(absent.length){
 }
 const precache=SPECIES.flatMap(s=>['front','back'].map(side=>`./assets/sprites/crystal/${side}/${dexNumber(s)}.png`));
 await writeFile(join(root,'assets/sprites/crystal/precache.json'),JSON.stringify(precache));
+await writeManifest();
 await rm(out,{recursive:true,force:true});await mkdir(out,{recursive:true});
-for(const name of ['index.html','manifest.webmanifest','service-worker.js'])await cp(join(root,name),join(out,name));
+for(const name of ['index.html','manifest.webmanifest','service-worker.js','core-manifest.json'])await cp(join(root,name),join(out,name));
 for(const name of ['src','assets'])await cp(join(root,name),join(out,name),{recursive:true});
 await writeFile(join(out,'README.txt'),'DAILY SILVER - Crystal Sprite Edition\nContains locally installed Crystal sprites for the supported species roster.\nUpload the contents of this directory to any static website host.\nNo database or backend required. Pokemon art remains third-party copyright.\n');
 console.log('Successfully built sprite-inclusive static release:',out);

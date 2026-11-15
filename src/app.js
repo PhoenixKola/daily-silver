@@ -1,392 +1,552 @@
-import {createRun,DAY_KEY,dailySeed,turn,active,alive,pkmnColor,battleScore,runSummary,estimateDamage,APP_ID} from './engine.js';
-import {MOVES,effectiveness} from './data.js';import {setScene,setHomeFocus,playSceneEvent,clearSceneEffects,startBattleIntro,clearBattleIntro} from './scene.js';
-import {bestCounter,moveMatchup} from './matchups.js';
-import {replayMoments} from './replay.js';
+import {createRun,turn,active,alive,DAY_KEY,dailySeed,pkmnColor,battleScore,APP_ID} from './engine.js';
+import {MOVES,SPECIAL} from './data.js';
+import {spriteHTML,installSpriteImageFallback,localSprite,clearWhiteBackdrop} from './sprites.js';
 import {BOSS_ENTRANCES} from './entrances.js';
-import {validateBackup} from './backup.js';import {spriteHTML,installSpriteImageFallback,localSprite,clearWhiteBackdrop} from './sprites.js';import {sfx,setSound,isSoundOn,isSoundReady,resumeSound,setMusicMode,setMasterVolume,getMasterVolume,setMusicLevel,getMusicLevel} from './sound.js';
-const $=id=>document.getElementById(id);
-const updateSoundLabel=on=>{const label=$('sound-button').querySelector('.nav-label');if(label)label.textContent='AUDIO '+(on?'ON':'OFF');else $('sound-button').textContent='AUDIO '+(on?'ON':'OFF')};
-const scene=$('scene-container'),sceneHome=scene.parentElement,sceneBattle=$('battle-scene-slot');
-let run=null,previewRun=null,view='home',partyOpen=false,recorded=false,animating=false,animationToken=0;
-const fxCaption=document.createElement('div');fxCaption.id='battle-fx-caption';fxCaption.setAttribute('aria-live','polite');fxCaption.className='battle-fx-caption hidden';scene.append(fxCaption);
-const rivalReveal=document.createElement('div');rivalReveal.id='rival-reveal';rivalReveal.className='rival-reveal hidden';scene.append(rivalReveal);
-const foeEntrance=document.createElement('div');foeEntrance.id='foe-entrance';foeEntrance.className='foe-entrance hidden';foeEntrance.setAttribute('aria-live','polite');scene.append(foeEntrance);
-rivalReveal.addEventListener('click',event=>{if(event.target.closest('[data-skip-intro]'))skipRequested=true});
-const skipFx=document.createElement('button');skipFx.id='skip-fx';skipFx.className='toggle-party skip-fx hidden';skipFx.textContent='» SKIP FX';skipFx.type='button';$('party-toggle').before(skipFx);let skipRequested=false;skipFx.addEventListener('click',()=>{skipRequested=true;skipFx.textContent='» SKIPPING';});
-const store={get(k){try{return JSON.parse(localStorage.getItem(APP_ID+':'+k))}catch{return null}},set(k,v){try{localStorage.setItem(APP_ID+':'+k,JSON.stringify(v))}catch(e){console.warn('Local storage unavailable',e)}}};
-let highContrast=store.get('high-contrast')===true;
-function setContrast(on){highContrast=!!on;document.body.classList.toggle('high-contrast',highContrast);store.set('high-contrast',highContrast)}
-document.body.classList.toggle('high-contrast',highContrast);
-let fxRate=Math.max(.5,Math.min(3,Number(store.get('fx-rate'))||1));
-let today=DAY_KEY();
-function refreshUtcDay(){
- const current=DAY_KEY(),changed=current!==today;today=current;
- const serial=Math.floor((Date.parse(today+'T00:00:00Z')-Date.parse('2026-01-01T00:00:00Z'))/864e5)+1;
- $('daily-number').textContent='DAILY '+String(Math.max(1,serial)).padStart(4,'0');
- $('issue-number').textContent='ISSUE '+String(Math.max(1,serial)).padStart(3,'0');
- $('today-label').textContent=new Intl.DateTimeFormat('en-GB',{day:'2-digit',month:'short',year:'numeric',timeZone:'UTC'}).format(new Date(today+'T12:00:00Z')).toUpperCase();
- $('home-date-label').textContent=new Intl.DateTimeFormat('en-GB',{day:'2-digit',month:'short',year:'numeric',timeZone:'UTC'}).format(new Date(today+'T12:00:00Z')).toUpperCase();
- if(changed&&view==='home')updateHome();
- if(changed&&view==='game'&&run?.mode==='daily')$('scene-caption').textContent='A NEW DAILY CHALLENGE IS AVAILABLE AFTER THIS BATTLE.';
+import {moveMatchup} from './matchups.js';
+import {validateBackup} from './backup.js';
+import {sfx,setSound,isSoundOn,isSoundReady,resumeSound,setMusicMode,setMasterVolume,setMusicLevel,setEffectsLevel,setEncounterState,setAmbience,playStinger} from './sound.js';
+import {createStage} from './pres/stage.js';
+import {preload} from './pres/assets.js';
+import {buildBeats} from './pres/beats.js';
+import {planSequence} from './pres/plan.js';
+import {timingOf} from './pres/families.js';
+import {createDirector} from './pres/director.js';
+import {stageForFallen,STAGE_NAMES} from './pres/atmosphere.js';
+import {conditionsOf,STATUS_SHORT,fieldOf,boostsOf} from './pres/conditions.js';
+import {moveFacts,categoryOf} from './moveinfo.js';
+import {startLab,createLabSession,remember,undo,canUndo,retry,compare,explainTurn,isLab,clone} from './lab.js';
+import {startRecording,recordTurn,finishRecording,stateAt,knockoutMarkers,decisiveTurnIndex,replayId} from './recorder.js';
+import {store,loadRun,dailyKey,saveRun,recordResult,stats,saveReplay,loadReplay} from './store.js';
+import {settings,applySettings,reducedMotion} from './settings.js';
+import {$,esc,icon,typeChip,catChip,pct,hpClass,toast,transition} from './ui/dom.js';
+import {initSheet,openSheet,closeSheet,forceClose,isSheetOpen,helpSheet,settingsSheet,dossierSheet,moveSheet,archiveSheet,labSheet,compareSheet} from './ui/sheets.js';
+
+let today=DAY_KEY(),view='home',run=null,preview=null,rec=null,busy=false,token=0,introduced=new Set(),lab=createLabSession(),lastBefore=null,replay=null,focusIndex=0;
+const director=createDirector();
+const live=document.createElement('div');live.className='sr-only';live.setAttribute('aria-live','polite');live.setAttribute('role','status');document.body.append(live);
+const announce=text=>{live.textContent='';setTimeout(()=>{live.textContent=text},40)};
+
+// ---------------------------------------------------------------- stage
+const hooks={
+ sfx:(type,detail,opts)=>{if(!replayMuted)sfx(type,detail,opts)},
+ caption:c=>setOutcome(c.text,c.tone),
+ hud:display=>renderHud(display),
+ timing:timingOf,
+ categoryOf:type=>SPECIAL.has(type)?'special':'physical',
+ intro:c=>showIntro(c),
+ settle:()=>{}
+};
+let replayMuted=false;
+const stage=createStage($('stage-canvas'),hooks);
+applySettings(stage);
+matchMedia?.('(prefers-reduced-motion: reduce)')?.addEventListener?.('change',()=>applySettings(stage));
+
+function setOutcome(text,tone=''){const el=$('outcome');el.textContent=text||'';el.dataset.tone=tone}
+const rate=()=>settings.speed;
+const names=(team,cur)=>(side,index)=>team[side][index??cur[side]]?.name||'';
+
+// ---------------------------------------------------------------- day handling
+function refreshDay(){
+ const now=DAY_KEY(),changed=now!==today;today=now;
+ const serial=Math.max(1,Math.floor((Date.parse(today+'T00:00:00Z')-Date.parse('2026-01-01T00:00:00Z'))/864e5)+1);
+ $('home-kicker').textContent=`Daily ${String(serial).padStart(4,'0')} · ${new Intl.DateTimeFormat('en-GB',{day:'2-digit',month:'short',timeZone:'UTC'}).format(new Date(today+'T12:00:00Z')).toUpperCase()}`;
+ if(changed&&view==='home')showHome();
  return changed;
 }
-refreshUtcDay();
-function loadRun(key){const a=store.get(key);return a&&a.version===1&&Array.isArray(a.player)&&a.player.length===6&&Array.isArray(a.foe)&&a.foe.length===6?a:null}
-function dailyKey(date=today){return 'daily:'+date}
-function save(){if(run)store.set(run.mode==='daily'?dailyKey(run.date):'practice',run)}
-function dateDelta(d){const dt=new Date(d+'T00:00:00Z');if(!Number.isFinite(dt.valueOf()))return '';dt.setUTCDate(dt.getUTCDate()-1);return dt.toISOString().slice(0,10)}
-function records(){const saved=store.get('records');return Array.isArray(saved)?saved.filter(x=>x&&typeof x==='object'):[]}
-function stats(){const rs=records().filter(r=>r.mode==='daily');let wins=rs.filter(r=>r.won).length;
- const winDates=new Set(rs.filter(r=>r.won).map(r=>r.date));let current=winDates.has(today)?today:dateDelta(today),streak=0;
- while(winDates.has(current)&&streak<9000){streak++;current=dateDelta(current)}
- let best=0;for(const d of [...winDates].sort()){let cursor=d,count=0;while(winDates.has(cursor)&&count<9000){count++;cursor=dateDelta(cursor)}best=Math.max(best,count)}
- return {wins,played:rs.length,streak,best};
+
+// ---------------------------------------------------------------- views
+function setView(next){
+ view=next;$('app').dataset.view=next;
+ $('panel-home').hidden=next!=='home';$('panel-battle').hidden=next!=='game';$('panel-replay').hidden=next!=='replay';$('panel-results').hidden=next!=='results';
+ $('home-overlay').hidden=next!=='home';$('hud').hidden=!(next==='game'||next==='replay');
+ $('journal-button').hidden=!(next==='game'||next==='results');
+ $('bar-title').textContent='';
 }
-function updateHome(){refreshUtcDay();const ex=loadRun(dailyKey());const b=$('daily-button');if(ex){b.innerHTML=ex.phase==='battle'?'<span class="play-icon">▶</span> RESUME DAILY BATTLE <span class="button-arrow">↗</span>':'<span class="play-icon">✦</span> VIEW TODAY\'S RESULT <span class="button-arrow">↗</span>'; $('daily-note').textContent=ex.phase==='battle'?`Your save is safe on this browser — turn ${ex.turn}.`:'Today’s official attempt is complete. A new save file arrives tomorrow at 00:00 UTC.';}else{b.innerHTML='<span class="play-icon">▶</span> BEGIN TODAY\'S BATTLE <span class="button-arrow">↗</span>';$('daily-note').textContent='A new randomized team arrives every day at 00:00 UTC.'}
- const s=stats();$('stat-wins').textContent=String(s.wins).padStart(2,'0');$('stat-streak').textContent=String(s.best).padStart(2,'0');$('stat-played').textContent=String(s.played).padStart(2,'0');
- let preview=createRun({mode:'daily',date:today});$('preview-party').innerHTML=preview.player.map((p,i)=>`<div class="mini-mon" title="${p.name} • Level ${p.level}">${spriteHTML(p)}</div>`).join('');
- previewRun=preview;setHomeFocus(0);setScene(preview,'home');
- $('home-spotlight-name').textContent=preview.player[0].name.toUpperCase();
- $('hero-preview-party').innerHTML=preview.player.map((p,i)=>`<button type="button" class="squad-mon ${i===0?'is-selected':''}" data-preview="${i}" aria-label="Preview ${htmlSafe(p.name)}, ${htmlSafe(p.types.join(' and '))} type" aria-pressed="${i===0}"><span class="squad-sprite">${spriteHTML(p)}</span><b>${htmlSafe(p.name.toUpperCase())}</b><small style="--squad-type:${pkmnColor(p.types[0])}">${htmlSafe(p.types[0].toUpperCase())}</small></button>`).join('');
-}
-function navigate(change){if(document.startViewTransition&&!window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches)document.startViewTransition(change);else change()}
-function viewHome(){hideFoeEntrance();animationToken++;animating=false;clearSceneEffects();clearBattleIntro();fxCaption.classList.add('hidden');rivalReveal.classList.add('hidden');skipFx.classList.add('hidden');$('game-view').classList.remove('is-animating');view='home';partyOpen=false;run=null;sceneHome.append(scene);$('home-scene-label').classList.remove('hidden');$('battle-hud').classList.add('hidden');$('home-view').classList.remove('hidden');$('game-view').classList.add('hidden');$('result-view').classList.add('hidden');setScene(null,'home');setMusicMode('home');updateHome();window.scrollTo({top:0,behavior:'instant'})}
-function previewAlly(index){
- if(view!=='home'||!previewRun||!Number.isInteger(index)||index<0||index>=previewRun.player.length)return;
- setHomeFocus(index);$('home-spotlight-name').textContent=previewRun.player[index].name.toUpperCase();
- $('hero-preview-party').querySelectorAll('[data-preview]').forEach((button,i)=>{button.classList.toggle('is-selected',i===index);button.setAttribute('aria-pressed',String(i===index))});
-}
-function battleView({intro=false}={}){hideFoeEntrance();view='game';rivalReveal.classList.add('hidden');sceneBattle.append(scene);$('home-scene-label').classList.add('hidden');$('battle-hud').classList.remove('hidden');$('home-view').classList.add('hidden');$('game-view').classList.remove('hidden');$('result-view').classList.add('hidden');partyOpen=false;setMusicMode(active(run,'p').hp/active(run,'p').maxHp<.24?'critical':'battle');renderBattle();window.scrollTo({top:0,behavior:'instant'});if(intro)showIntro();}
-function launch(mode){refreshUtcDay();let fresh=false;if(mode==='daily'){const saved=loadRun(dailyKey());run=saved||createRun({mode:'daily',date:today});fresh=!saved;if(!saved)save();}else{const saved=loadRun('practice');fresh=!(saved&&saved.phase==='battle');run=fresh?createRun({mode:'practice'}):saved;save();}sfx('select');navigate(()=>{if(run.phase==='battle')battleView({intro:fresh});else resultsView()})}
-function itemInfo(p){return p.item==='(used)'?'CONSUMED':String(p.item||'NONE').toUpperCase()}
-function statusText(p){const arr=[];if(p.status)arr.push(`<span>${htmlSafe(String(p.status).toUpperCase())}</span>`);if(p.confused)arr.push('<span>CONFUSED</span>');if(p.seeded)arr.push('<span>SEEDED</span>');return arr.join('')}
-function setHealth(side,p,b=run){const el=$(side+'-hp'),pct=100*p.hp/p.maxHp;el.style.width=pct+'%';el.className='life-fill'+(pct<24?' danger':pct<51?' warning':'');$(side+'-name').textContent=p.name.toUpperCase();$(side+'-level').textContent='LV.'+p.level;$(side+'-count').textContent=`${p.hp}/${p.maxHp}`;$(side+'-status').innerHTML=statusText(p)}
-const tactics=document.createElement('div');tactics.id='battle-tactics';tactics.className='battle-tactics';tactics.setAttribute('aria-live','off');
-// The battle help strip uses a CSS class, not an ID. Older layouts may omit it.
-const tacticsAnchor=document.querySelector('.battle-help')||$('party-toggle');
-tacticsAnchor.after(tactics);
-const fieldButton=document.createElement('button');fieldButton.type='button';fieldButton.className='field-button';fieldButton.textContent='FIELD STATUS';fieldButton.setAttribute('aria-expanded','false');tactics.after(fieldButton);
-fieldButton.addEventListener('click',()=>{const open=tactics.classList.toggle('is-open');fieldButton.setAttribute('aria-expanded',String(open))});
-const journalButton=document.createElement('button');journalButton.type='button';journalButton.className='journal-button';journalButton.textContent='FULL JOURNAL →';$('round-label').after(journalButton);
-journalButton.addEventListener('click',()=>showTurnRecap());
-const htmlSafe=(value)=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-function showFoeEntrance(mon,index){const card=BOSS_ENTRANCES[mon.name];if(!card)return;foeEntrance.dataset.motif=card.motif;foeEntrance.style.cssText=`--entrance-accent:${pkmnColor(mon.types[0])}`;foeEntrance.innerHTML=`<span class="entrance-seal" aria-hidden="true">0${index+1}</span><span class="entrance-portrait">${spriteHTML(mon)}</span><span class="entrance-copy"><small>RED'S TEAM / 0${index+1} OF 06</small><strong>${htmlSafe(mon.name.toUpperCase())}</strong><b>${htmlSafe(card.title)}</b><em>${htmlSafe(card.line)}</em><span>SIGNATURE / ${htmlSafe(card.move.toUpperCase())}</span></span>`;foeEntrance.classList.remove('hidden')}
-function hideFoeEntrance(){foeEntrance.classList.add('hidden')}
-function renderAscent(b){
- const track=$('ascent-track');
- const signature=b.foe.map((mon,i)=>`${mon.name}:${mon.hp<=0?'out':i===b.eActive?'active':'waiting'}`).join('|');
- $('ascent-count').textContent=`${b.foe.filter(mon=>mon.hp<=0).length} OF 6 CLEARED`;
- const fallen=b.foe.filter(mon=>mon.hp<=0).length;
- const stage=fallen<2?0:fallen<4?1:fallen<6?2:3;
- $('ascent-stage').textContent=['I / STILLNESS','II / RISING WIND','III / WHITEOUT','IV / LAST LIGHT'][stage];
- $('game-view').dataset.weatherStage=stage;
- if(track.dataset.signature===signature)return;
- track.dataset.signature=signature;
- track.innerHTML=b.foe.map((mon,i)=>{
-  const state=mon.hp<=0?'is-cleared':i===b.eActive?'is-current':'is-waiting';
-  return `<li class="ascent-stop ${state}" aria-current="${i===b.eActive&&mon.hp>0?'step':'false'}" aria-label="Stage ${i+1}: ${htmlSafe(mon.name)}, ${mon.hp<=0?'cleared':i===b.eActive?'current opponent':'awaiting'}"><span class="ascent-index">0${i+1}</span>${spriteHTML(mon)}<small>${htmlSafe(mon.name.toUpperCase())}</small></li>`;
- }).join('');
-}
-function recapMarkup(log,limit=32,decisiveTurn=0){
- const groups=new Map();
- for(const entry of log.slice(-limit)){
-  const turn=Number.isInteger(entry.turn)?entry.turn:0;
-  if(!groups.has(turn))groups.set(turn,[]);
-  groups.get(turn).push(entry);
- }
- const icons={move:'&#9876;',faint:'&#10005;',heal:'&#10010;',status:'&#9670;',switch:'&#8644;',effect:'&#10022;',critical:'!',miss:'&#8709;'};
- return [...groups].map(([turn,entries])=>`<section class="recap-turn ${turn===decisiveTurn?'is-decisive':''}" data-turn="${turn}"><div class="recap-turn-head"><span>TURN ${String(turn).padStart(2,'0')}${turn===decisiveTurn?' / DECISIVE':''}</span><small>${entries.length} FIELD NOTES</small></div><div class="recap-events">${entries.map(entry=>`<div class="recap-event ${htmlSafe(entry.kind||'note')}"><span class="recap-icon" aria-hidden="true">${icons[entry.kind]||'&#9671;'}</span><span>${htmlSafe(entry.text)}</span></div>`).join('')}</div></section>`).join('');
-}
-function screenTurns(b,side){const fields=b.screens?.[side];const reflect=typeof fields==='number'?fields:fields?.reflect||0;const special=typeof fields==='number'?fields:fields?.lightScreen||0;return `${reflect?`REFLECT ${reflect}T`:''} ${special?`LIGHT SCREEN ${special}T`:''}`.trim()||'NO BARRIERS';}
-function boostSummary(p){const boosts=Object.entries(p.boost||{}).filter(([key,value])=>value!==0);return boosts.length?boosts.map(([k,v])=>`${k.toUpperCase()} ${v>0?'+':''}${v}`).join(' · '):'NO STAT MODIFIERS';}
-function updateBattleTactics(b,p,e){tactics.innerHTML=`<div><strong>YOUR FIELD</strong><span>${htmlSafe(screenTurns(b,'p'))} · SPIKES ${b.spikes?.p||0}</span><small>${htmlSafe(boostSummary(p))}</small></div><div><strong>RED'S FIELD</strong><span>${htmlSafe(screenTurns(b,'e'))} · SPIKES ${b.spikes?.e||0}</span><small>${htmlSafe(boostSummary(e))}</small></div>`;}
-function showIntro(){
- const token=++animationToken;animating=true;skipRequested=false;
- $('game-view').classList.add('is-animating');skipFx.textContent='» SKIP INTRO';skipFx.classList.remove('hidden');
- fxCaption.classList.add('hidden');
- rivalReveal.innerHTML=`<div class="reveal-heading"><span>FINAL ENCOUNTER / MT. SILVER</span><button type="button" data-skip-intro aria-label="Skip rival introduction">SKIP ↗</button></div><div class="reveal-center"><span class="reveal-emblem" aria-hidden="true">R</span><div><span class="reveal-overline">THE CHALLENGER STEPS FORWARD</span><strong>TRAINER <em>RED.</em></strong><small>ONE SUMMIT. SIX FINAL OBSTACLES.</small></div></div><div class="reveal-team" aria-label="Red's six Pokémon">${run.foe.map(mon=>`<span title="${htmlSafe(mon.name)}">${spriteHTML(mon)}<small>${htmlSafe(mon.name.toUpperCase())}</small></span>`).join('')}</div>`;
- rivalReveal.classList.remove('hidden');
- const reduced=window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
- startBattleIntro(reduced?160:1400);
- const started=performance.now();
- const finish=()=>{
-  clearBattleIntro();rivalReveal.classList.add('hidden');
-  if(skipRequested){hideFoeEntrance();animating=false;skipFx.classList.add('hidden');$('game-view').classList.remove('is-animating');renderBattle();return}
-  showFoeEntrance(run.foe[run.eActive],run.eActive);skipFx.classList.add('hidden');
-  setTimeout(()=>{if(token!==animationToken||view!=='game')return;hideFoeEntrance();animating=false;$('game-view').classList.remove('is-animating');renderBattle()},reduced?1000:1700);
- };
- const check=()=>{
-  if(token!==animationToken||view!=='game')return;
-  if(skipRequested||performance.now()-started>=(reduced?420:2150))finish();
-  else setTimeout(check,50);
- };setTimeout(check,50);
-}
-function toggleParty(force){if(view!=='game'||animating)return;partyOpen=typeof force==='boolean'?force:!partyOpen;renderBattle();sfx('select')}
-function moveChoiceMarkup(p,e){
- const depleted=p.moves.every(slot=>slot.pp<=0);
- return p.moves.map((slot,i)=>{
-  const move=MOVES[slot.name],struggle=slot.pp===0&&depleted,match=moveMatchup(slot,e);
-  const label=struggle?'LAST RESORT / RECOIL':slot.pp===0?'OUT OF PP':match.label;
-  const kind=struggle?'struggle':slot.pp===0?'empty':match.kind;
-  const type=struggle?'Normal':move.type;
-  const detail=move.power?`${move.power} PWR · ${move.accuracy}% ACC`:move.accuracy<100?`UTILITY · ${move.accuracy}% ACC`:'UTILITY';
-  const glyph=move.power?'<path d="M13 2 5 13h5l-1 9 9-12h-5z"/>':'<circle cx="12" cy="12" r="3"/><circle cx="12" cy="3.5" r="1.5"/><circle cx="19.4" cy="16.2" r="1.5"/><circle cx="4.6" cy="16.2" r="1.5"/>';
-  const ppPercent=Math.max(0,Math.min(100,slot.pp/slot.maxPp*100));
-  return `<button class="move-button matchup-${kind}" style="--move-accent:${pkmnColor(type)};--pp:${ppPercent}%" data-move="${i}" ${slot.pp===0&&!depleted?'disabled':''} aria-label="${htmlSafe(struggle?'Struggle':slot.name)}, ${slot.pp} of ${slot.maxPp} PP, ${htmlSafe(label)}, ${htmlSafe(detail)}"><span class="move-emblem" aria-hidden="true"><svg viewBox="0 0 24 24">${glyph}</svg></span><span class="move-content"><span class="move-top"><span class="move-name">${htmlSafe(struggle?'STRUGGLE':slot.name.toUpperCase())}</span><span class="move-num"><kbd>${i+1}</kbd></span></span><span class="move-meta"><span class="type-chip"><i class="type-dot" style="--type-color:${pkmnColor(type)}"></i>${htmlSafe(type.toUpperCase())}</span><span class="move-detail">${htmlSafe(detail)}</span></span><span class="move-footer"><span class="move-matchup">${htmlSafe(label)}</span><span class="move-pp"><i></i><b>${slot.pp}<small>/${slot.maxPp} PP</small></b></span></span></span></button>`;
- }).join('');
-}
-function partyChoiceMarkup(b,counters){
- return b.player.map((mon,i)=>{const counter=counters[i];return `<button class="party-btn ${i===b.pActive?'selected':''} ${counter?'has-counter':''}" data-switch="${i}" ${(mon.hp===0||i===b.pActive)?'disabled':''} aria-label="Switch to ${htmlSafe(mon.name)}, ${mon.hp} HP${counter?`, super-effective ${htmlSafe(counter.name)} times ${counter.multiplier}`:''}"><span class="party-avatar" style="--tcolor:${pkmnColor(mon.types[0])}">${spriteHTML(mon)}</span><span class="party-desc"><b>${htmlSafe(mon.name.toUpperCase())}</b><small>LV.${mon.level} &middot; ${mon.hp}/${mon.maxHp} HP</small><span class="party-life"><span style="width:${mon.hp/mon.maxHp*100}%"></span></span>${counter?`<span class="party-counter">COUNTER / ${htmlSafe(counter.name.toUpperCase())} &times;${counter.multiplier}</span>`:''}</span></button>`}).join('');
-}
-function renderBattle(b=run,{controls=true}={}){if(!b)return;setScene(b,'game');let p=active(b,'p'),e=active(b,'e');setHealth('player',p,b);setHealth('enemy',e,b);
- $('turn-number').textContent=String(b.turn).padStart(2,'0');$('team-number').textContent=String(alive(b.player)).padStart(2,'0')+' / 06';$('run-kicker').textContent=(b.mode==='daily'?'DAILY CHALLENGE':'PRACTICE SESSION')+' / '+b.date;$('scene-caption').textContent=b.pendingSwitch?'CHOOSE YOUR NEXT ALLY.':'SIX ALLIES. ONE FINAL BATTLE.';
- const counters=b.player.map(mon=>bestCounter(mon,e));
- for(const [side,party,index] of [['ally',b.player,b.pActive],['rival',b.foe,b.eActive]]){
-  $(side+'-roster').innerHTML=party.map((mon,i)=>{
-   const counter=side==='ally'?counters[i]:null;
-   const detail=counter?`, counter move ${counter.name} times ${counter.multiplier}`:'';
-   return `<span class="roster-pip ${mon.hp<=0?'is-out':i===index?'is-active':''} ${counter?'has-counter':''}" title="${htmlSafe(mon.name)}: ${mon.hp<=0?'fainted':`${mon.hp}/${mon.maxHp} HP`}${htmlSafe(detail)}" aria-label="${htmlSafe(mon.name)} ${mon.hp<=0?'fainted':i===index?'active':'ready'}${htmlSafe(detail)}"></span>`;
-  }).join('');
- }
- renderAscent(b);
- const commandCard=$('active-command-card'),cardSignature=`${p.name}:${p.hp}:${p.status}:${b.pActive}`;
- if(commandCard.dataset.signature!==cardSignature){const arriving=commandCard.dataset.mon!==p.name;commandCard.dataset.signature=cardSignature;commandCard.dataset.mon=p.name;commandCard.style.cssText=`--active-color:${pkmnColor(p.types[0])}`;commandCard.innerHTML=`<span class="command-portrait">${spriteHTML(p)}</span><span class="command-identity"><small>NOW BATTLING / LV.${p.level}</small><strong>${htmlSafe(p.name.toUpperCase())}</strong><span class="command-types">${p.types.map(type=>`<b style="--type-color:${pkmnColor(type)}">${htmlSafe(type.toUpperCase())}</b>`).join('')}${p.status?`<b class="command-status">${htmlSafe(p.status.toUpperCase())}</b>`:''}</span></span><span class="command-vitals"><b>${p.hp}<small> / ${p.maxHp} HP</small></b><span class="command-life"><i style="width:${Math.max(0,Math.min(100,p.hp/p.maxHp*100))}%"></i></span></span>`;if(arriving){commandCard.classList.remove('is-arriving');void commandCard.offsetWidth;commandCard.classList.add('is-arriving')}}
- $('active-item').textContent='HELD ITEM — '+itemInfo(p);$('fx-speed-indicator').textContent='FX ×'+fxRate;scene.classList.toggle('danger-zone',p.hp/p.maxHp<.24);if(b===run&&view==='game')setMusicMode(p.hp/p.maxHp<.24?'critical':'battle');$('command-kicker').textContent=b.pendingSwitch?'YOUR ACTIVE ALLY HAS FAINTED':partyOpen?'CHOOSE A POKÉMON TO SWITCH':'CHOOSE YOUR NEXT MOVE';$('party-toggle').textContent=partyOpen?'← BACK TO MOVES':'⇄ VIEW PARTY';$('party-toggle').disabled=b.pendingSwitch; if(b.pendingSwitch)partyOpen=true;
- $('moves-panel').classList.toggle('hidden',partyOpen);$('party-panel').classList.toggle('hidden',!partyOpen);
- if(controls)$('moves-panel').innerHTML=moveChoiceMarkup(p,e);
- if(controls)$('party-panel').innerHTML=partyChoiceMarkup(b,counters);
- updateBattleTactics(b,p,e);
- $('round-label').textContent='LOG_'+String(b.turn).padStart(3,'0');$('battle-log').innerHTML=recapMarkup(b.log);$('battle-log').scrollTop=$('battle-log').scrollHeight;
-}
-async function action(a){
- if(view!=='game'||!run||animating)return;
- const before=structuredClone(run);
- if(!turn(run,a))return;
- const switched=a.kind==='switch';
- const finishedRun=run;
- save(); // the actual battle is committed immediately, safe across reloads
- const events=run.visualEvents||[];
- if(!events.length){if(switched)partyOpen=false;if(run.phase==='battle')renderBattle();else resultsView();return;}
- animating=true;skipRequested=false;
- const token=++animationToken;
- const displayed=before;
- const game=$('game-view');game.classList.add('is-animating');
- skipFx.textContent='» SKIP FX';skipFx.classList.remove('hidden');fxCaption.classList.remove('hidden');
- renderBattle(displayed);
- try{
-  for(const ev of events){
-   if(token!==animationToken||view!=='game')return;
-   if(skipRequested)break;
-   if(ev.kind==='switch'){
-    // Switch arrives at the start of the cue so the incoming sprite gets its entrance effect.
-    if(ev.side==='p')displayed.pActive=ev.index;else displayed.eActive=ev.index;
-   }
-   renderBattle(displayed,{controls:false});
-   if(ev.kind==='switch'&&ev.side==='e')showFoeEntrance(displayed.foe[ev.index],ev.index);
-   fxCaption.textContent=eventCaption(ev,displayed);
-   if(ev.kind==='move')sfx('cast',ev.type);
-   else if(ev.kind==='damage')sfx('impact',ev.amount);
-   else if(ev.kind==='faint')sfx('faint');
-   else if(ev.kind==='heal')sfx('heal');
-   else if(ev.kind==='switch')sfx('select');
-   else if(ev.kind==='critical')sfx('critical');
-   else if(['miss','blocked','immune'].includes(ev.kind))sfx(ev.kind);
-   const durations={move:650,damage:440,heal:390,status:380,buff:370,switch:540,faint:740,miss:270,blocked:270,immune:320,critical:310,effectiveness:290};
-   await playSceneEvent(ev,Math.round((ev.kind==='switch'&&ev.side==='e'?1550:durations[ev.kind]||260)/fxRate));
-   if(ev.kind==='switch'&&ev.side==='e'){
-     if(window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches)await new Promise(resolve=>setTimeout(resolve,850));
-     hideFoeEntrance();
-   }
-   if(ev.kind==='damage'||ev.kind==='heal'){
-     // Apply the visual HP change only when the impact/recovery animation completes.
-     const mon=(ev.side==='p'?displayed.player:displayed.foe)[ev.index];
-     if(mon)mon.hp=ev.hp;
-     renderBattle(displayed,{controls:false});
-   }
-  }
- }finally{
-  if(token===animationToken){
-   animating=false;clearSceneEffects();hideFoeEntrance();game.classList.remove('is-animating');skipFx.classList.add('hidden');fxCaption.classList.add('hidden');
-   if(switched)partyOpen=false;
-   if(view==='game'&&run===finishedRun){if(run.phase!=='battle'){recordResult();resultsView()}else renderBattle()}
-  }
- }
-}
-function eventCaption(ev,displayed){
- const team=ev.side==='p'?displayed.player:displayed.foe;
- const mon=team?.[ev.index??(ev.side==='p'?displayed.pActive:displayed.eActive)];
- const name=mon?.name?.toUpperCase()||'POKÉMON';
- if(ev.kind==='miss')return `${name} DODGED THE ATTACK!`;
- if(ev.kind==='immune')return `NO EFFECT ON ${name}!`;
- if(ev.kind==='blocked')return `${name} WAS PROTECTED!`;
- if(ev.kind==='effectiveness')return ev.effectiveness>=2?'IT’S SUPER EFFECTIVE!':'IT’S NOT VERY EFFECTIVE…';
- if(ev.kind==='move')return `${ev.side==='p'?'YOUR':'RED’S'} ${name} · ${ev.move.toUpperCase()}`;
- if(ev.kind==='damage')return `${name} TOOK ${ev.amount} DAMAGE!`;
- if(ev.kind==='heal')return `${name} RECOVERED ${ev.amount} HP`;
- if(ev.kind==='faint')return `${ev.name.toUpperCase()} FAINTED!`;
- if(ev.kind==='critical')return 'A CRITICAL HIT!';
- if(ev.kind==='switch')return `${ev.side==='p'?'YOU':'RED'} SENT OUT ${ev.name.toUpperCase()}!`;
- if(ev.kind==='status')return `${name} · STATUS CHANGED`;
- return `${name} · STATS CHANGED`;
-}
-function recordResult(){if(!run||run.phase==='battle')return;const id=run.mode+':'+run.date+':'+run.seed;let all=records();if(!all.some(r=>r.id===id)){const r={id,...runSummary(run),score:battleScore(run)};all.unshift(r);store.set('records',all.slice(0,200))}}
-function momentMarkup(moment,won){const label=moment?.kind==='finisher'?'THE DECISIVE STRIKE':'THE FINAL MOMENT';const detail=moment?.kind==='finisher'?`${moment.actor} used ${moment.move} against ${moment.target}.`:moment?.target?`${moment.target} fell as the ${won?'summit was claimed':'last ally was lost'}.`:'This record predates the decisive moment field.';return `<span class="moment-kicker">TURN ${Number.isInteger(moment?.turn)?moment.turn:'—'} / ${label}</span><strong>${htmlSafe(detail)}</strong>`}
-function resultsView(){if(!run)return;hideFoeEntrance();recordResult();view='results';$('home-view').classList.add('hidden');$('game-view').classList.add('hidden');$('result-view').classList.remove('hidden');$('result-view').classList.toggle('is-victory',run.phase==='won');$('result-view').classList.toggle('is-defeat',run.phase!=='won');$('result-view').classList.remove('result-entrance');void $('result-view').offsetWidth;$('result-view').classList.add('result-entrance');$('result-sigil').textContent=run.phase==='won'?'✦':'✳';$('result-tag').textContent=(run.mode==='daily'?'DAILY / ':'PRACTICE / ')+(run.phase==='won'?'VICTORY':'DEFEAT');$('result-title').textContent=run.phase==='won'?'THE SUMMIT IS YOURS.':'THE SNOW FALLS AGAIN.';$('result-description').textContent=run.phase==='won'?'The challenger is finally silent. Your save file has a different ending.':'The mountain keeps its secret. Tomorrow, another team will try.';
- setMusicMode('results');$('result-turns').textContent=String(Math.max(0,run.turn-1)).padStart(2,'0');$('result-left').textContent=String(alive(run.player)).padStart(2,'0');$('result-score').textContent=Math.max(0,battleScore(run)).toLocaleString('en-US');$('result-moment').innerHTML=momentMarkup(run.moment,run.phase==='won');$('result-party').innerHTML=run.player.map(x=>`<span class="${x.hp===0?'out':''}">${spriteHTML(x)}${htmlSafe(String(x.name).toUpperCase())}</span>`).join('');$('result-note').textContent=run.mode==='daily'?'Your official daily run is locked on this device until tomorrow.':'Practice results never affect your daily streak.';sfx(run.phase==='won'?'success':'loss');window.scrollTo({top:0,behavior:'instant'})}
-function loadCardSprite(mon){
- return new Promise(resolve=>{
-  const image=new Image();
-  image.onload=()=>{
-   try{
-    const cleaned=document.createElement('canvas');cleaned.width=image.naturalWidth;cleaned.height=image.naturalHeight;
-    const context=cleaned.getContext('2d',{willReadFrequently:true});context.drawImage(image,0,0);
-    const pixels=context.getImageData(0,0,cleaned.width,cleaned.height);
-    clearWhiteBackdrop(pixels.data,pixels.width,pixels.height);context.putImageData(pixels,0,0);resolve(cleaned);
-   }catch{resolve(image)}
-  };
-  image.onerror=()=>resolve(null);
-  image.src=localSprite(mon); // Export uses only same-origin installed art.
+function leaveBattle(){director.cancel();token++;busy=false;hideIntro();skipUi(false);stage.clear()}
+function showHome(){
+ leaveBattle();run=null;rec=null;replay=null;
+ transition(()=>{
+  setView('home');stage.setMode('home');
+  preview=createRun({mode:'daily',date:today});
+  stage.setDisplay(preview,{mode:'home',snap:true});stage.setFocus(0);focusIndex=0;
+  const saved=loadRun(dailyKey(today)),done=saved&&saved.phase!=='battle';
+  $('daily-label').textContent=done?"View today's result":saved?'Resume daily battle':"Begin today's battle";
+  $('daily-note').textContent=done?`Today's official attempt is complete. The next team arrives at 00:00 UTC.`:saved?`Saved safely on this browser, turn ${saved.turn}.`:'One official attempt per day. A new team arrives at 00:00 UTC.';
+  $('team-list').innerHTML=preview.player.map((p,i)=>`<li><button type="button" class="team-mon" data-i="${i}" aria-pressed="${i===0}" aria-label="Inspect ${esc(p.name)}, ${esc(p.types.join(' and '))}">${spriteHTML(p)}<b>${esc(p.name.toUpperCase())}</b><small>${esc(p.types[0].toUpperCase())}</small></button></li>`).join('');
  });
+ setMusicMode('home');setAmbience(0);refreshDay();
 }
-function loadCardBackdrop(){return new Promise(resolve=>{const image=new Image();image.onload=()=>resolve(image);image.onerror=()=>resolve(null);image.src='./assets/art/summit-night.png'})}
-async function downloadResultCard(){
+function setFocus(i){focusIndex=i;stage.setFocus(i);$('team-list').querySelectorAll('.team-mon').forEach((b,k)=>b.setAttribute('aria-pressed',String(k===i)))}
+
+// ---------------------------------------------------------------- HUD + commands
+function plateHTML(mon,team,activeIdx,field,label){
+ if(!mon)return '';
+ const p=pct(mon.hp,mon.maxHp),tags=[];
+ for(const c of conditionsOf(mon)){const text={par:'PAR',brn:'BRN',psn:'PSN',tox:'TOX',slp:'SLP',frz:'FRZ',confused:'CONFUSED',seed:'SEEDED',curse:'CURSED',trap:'TRAPPED',substitute:'SUBSTITUTE'}[c]||c;tags.push(`<span class="tag t-bad">${text}</span>`)}
+ for(const b of boostsOf(mon))tags.push(`<span class="tag ${b.stage>0?'t-good':'t-bad'}" title="${b.stat} ${b.stage}">${b.stage>0?'▲':'▼'} ${({atk:'ATK',def:'DEF',spa:'SPA',spd:'SPD',spe:'SPE',accuracy:'ACC'})[b.stat]||b.stat.toUpperCase()}${Math.abs(b.stage)>1?' ×'+Math.abs(b.stage):''}</span>`);
+ if(field.reflect>0)tags.push(`<span class="tag t-field">REFLECT ${field.reflect}</span>`);
+ if(field.lightScreen>0)tags.push(`<span class="tag t-field">LIGHT SCREEN ${field.lightScreen}</span>`);
+ if(field.spikes>0)tags.push('<span class="tag t-field">SPIKES</span>');
+ return `<div class="plate-top"><span class="plate-name">${esc(mon.name.toUpperCase())}</span><span class="plate-lv">Lv.${mon.level}</span><span class="plate-side" role="img" aria-label="${esc(label)}: ${team.filter(m=>m.hp>0).length} of 6 standing">${team.map((m,i)=>`<i class="pip ${m.hp<=0?'is-out':''} ${i===activeIdx?'is-active':''}"></i>`).join('')}</span></div>
+ <div class="hp"><span class="hp-label">HP</span><span class="hp-track"><span class="hp-fill ${hpClass(p)}" style="width:${p}%"></span></span><span class="hp-num">${mon.hp}/${mon.maxHp}</span></div>
+ <div class="tags">${tags.join('')}</div>`;
+}
+function renderHud(d){
+ if(!d)return;
+ const p=d.player[d.pActive],e=d.foe[d.eActive];
+ $('plate-foe').innerHTML=plateHTML(e,d.foe,d.eActive,fieldOf(d,'e'),"Red's team");$('plate-foe').style.setProperty('--tc',pkmnColor(e?.types[0]));
+ $('plate-ally').innerHTML=plateHTML(p,d.player,d.pActive,fieldOf(d,'p'),'Your team');$('plate-ally').style.setProperty('--tc',pkmnColor(p?.types[0]));
+}
+function tacticalTag(slot,foe){
+ const move=MOVES[slot.name],facts=moveFacts(slot.name),match=moveMatchup(slot,foe);
+ if(slot.pp<=0)return ['No PP left','bad'];
+ if(match.kind==='immune')return ['No effect','bad'];
+ if(facts.warnings.length&&match.kind!=='counter')return [`⚠ ${facts.warnings[0].replace(/^Recoil:.*/,'Recoil').replace(/^The user must recharge.*/,'Recharge turn').replace(/^Takes a turn.*/,'Charges first').replace(/^The user faints.*/,'User faints').replace(/^The user is hurt.*/,'Crash risk').replace(/^The user falls asleep.*/,'Sleeps after')}`,'warn'];
+ if(match.kind==='counter')return [`Super effective ×${match.multiplier}`,'good'];
+ if(match.kind==='resisted')return [`Resisted ×${match.multiplier}`,'bad'];
+ if(match.kind==='fixed')return ['Fixed damage',''];
+ if(match.kind==='utility'){
+  if(move.heal)return ['Recovers HP','good'];if(move.boost)return ['Raises stats','good'];if(move.targetBoost)return ['Lowers target','warn'];
+  if(move.status)return ['Inflicts status','warn'];if(['reflect','lightScreen','protect','substitute'].includes(move.special))return ['Defensive','good'];
+  return ['Utility',''];
+ }
+ return ['Neutral ×1',''];
+}
+function renderMoves(b){
+ const p=active(b,'p'),e=active(b,'e'),depleted=p.moves.every(s=>s.pp<=0);
+ $('moves').innerHTML=p.moves.map((slot,i)=>{
+  const m=MOVES[slot.name],f=moveFacts(slot.name),[tag,tone]=tacticalTag(slot,e),struggle=slot.pp===0&&depleted,type=struggle?'Normal':m.type;
+  const detail=f.power?`${f.power} pwr · ${f.accuracy}%`:`${f.accuracy}% acc`;
+  return `<div class="move" style="--mc:${pkmnColor(type)}">
+   <button class="move-main" type="button" data-move="${i}" ${slot.pp===0&&!depleted?'disabled':''} aria-label="${esc(struggle?'Struggle':slot.name)}, ${esc(type)}, ${f.category}, ${detail}, ${slot.pp} of ${slot.maxPp} PP, ${esc(tag)}. Key ${i+1}.">
+    <span class="move-name"><span>${esc(struggle?'STRUGGLE':slot.name.toUpperCase())}</span><kbd aria-hidden="true">${i+1}</kbd></span>
+    <span class="move-meta">${typeChip(type)}${catChip(f.category)}<span>${esc(detail)}</span></span>
+    <span class="move-foot"><span class="move-tag ${tone}">${esc(tag)}</span><span class="move-pp ${slot.pp<=2?'low':''}">${slot.pp}/${slot.maxPp} PP</span></span>
+   </button>
+   <button class="move-info" type="button" data-info="${i}" aria-label="Details for ${esc(slot.name)}">${icon('info')}</button>
+  </div>`}).join('');
+}
+function renderCommand(){
  if(!run)return;
- const result=run,button=$('result-card');button.disabled=true;button.textContent='PREPARING CARD...';
- try{
-  const [sprites,backdrop]=await Promise.all([Promise.all(result.player.map(loadCardSprite)),loadCardBackdrop()]);
-  const c=document.createElement('canvas');c.width=1200;c.height=630;const g=c.getContext('2d');
-  const won=result.phase==='won';g.fillStyle='#10162d';g.fillRect(0,0,1200,630);
-  if(backdrop){g.imageSmoothingEnabled=false;g.drawImage(backdrop,0,0,1200,630);g.fillStyle='#101827aa';g.fillRect(0,0,1200,630)}
-  else{
-   for(let i=0;i<42;i++){const x=(i*129+47)%1200,y=(i*71+57)%630;g.fillStyle=i%3?'#2b3757':'#657b93';g.fillRect(x,y,3,3)}
-   g.fillStyle='#2b395a';g.beginPath();g.moveTo(0,430);g.lineTo(180,235);g.lineTo(320,377);g.lineTo(560,172);g.lineTo(890,400);g.lineTo(1080,218);g.lineTo(1200,325);g.lineTo(1200,630);g.lineTo(0,630);g.fill();
-   g.fillStyle='#91b3c7';g.beginPath();g.moveTo(0,490);g.lineTo(235,340);g.lineTo(460,430);g.lineTo(770,315);g.lineTo(1200,463);g.lineTo(1200,630);g.lineTo(0,630);g.fill();
-  }
-  g.fillStyle='#f6d79d';g.font='bold 30px monospace';g.fillText('DAILY SILVER / SUMMIT REPORT',56,77);
-  g.font='bold 74px Impact, sans-serif';g.fillText(won?'VICTORY RECORDED':'THE SUMMIT ENDURES',55,167);
-  g.fillStyle='#e5edf0';g.font='bold 23px monospace';g.fillText((result.mode==='daily'?'DAILY CHALLENGE / ':'PRACTICE / ')+result.date,58,217);
-  g.fillStyle='#f7d59d';g.font='bold 16px monospace';g.fillText('THE SIX WHO CLIMBED',58,251);
-  sprites.forEach((sprite,i)=>{
-   const mon=result.player[i],x=54+i*183,y=270;
-   g.fillStyle='#17243c';g.fillRect(x,y,172,172);g.strokeStyle=mon.hp>0?'#a8c5c7':'#63758b';g.lineWidth=2;g.strokeRect(x+1,y+1,170,170);
-   if(sprite){
-    const sw=sprite.naturalWidth||sprite.width,sh=sprite.naturalHeight||sprite.height,scale=Math.min(116/sw,111/sh);
-    const dw=Math.round(sw*scale),dh=Math.round(sh*scale);
-    g.save();g.globalAlpha=mon.hp>0?1:.45;g.imageSmoothingEnabled=false;
-    g.drawImage(sprite,Math.round(x+(172-dw)/2),Math.round(y+8+(114-dh)/2),dw,dh);g.restore();
-   }
-   g.fillStyle=mon.hp>0?'#f1f3e8':'#a8b2c0';g.font='bold 16px monospace';g.textAlign='center';g.fillText(mon.name.toUpperCase(),x+86,y+143,156);
-   g.font='bold 11px monospace';g.fillStyle=mon.hp>0?'#a6dec4':'#efacb0';g.fillText(mon.hp>0?'SURVIVED':'FAINTED',x+86,y+161);g.textAlign='left';
-  });
-  g.fillStyle='#131c37';g.fillRect(46,463,1108,125);g.strokeStyle='#d5c39a';g.lineWidth=3;g.strokeRect(46,463,1108,125);
-  g.fillStyle='#f6d79d';g.font='bold 32px monospace';g.fillText('SCORE '+battleScore(result),67,506);g.fillText('SURVIVORS '+alive(result.player)+'/6',68,555);g.fillText('TURNS '+(result.turn-1),720,506);
-  g.fillStyle='#d0e0e7';g.font='18px monospace';g.fillText('RED: '+alive(result.foe)+'/6 REMAINING',720,553);
-  const a=document.createElement('a');a.download='daily-silver-'+(result.mode==='daily'?result.date:'practice')+'.png';a.href=c.toDataURL('image/png');document.body.append(a);a.click();a.remove();sfx('select');
- }catch(error){console.error('Could not export result card',error);button.textContent='CARD EXPORT FAILED';setTimeout(()=>button.textContent='SAVE RESULT CARD',2500);return}
- finally{button.disabled=false;if(button.textContent==='PREPARING CARD...')button.textContent='SAVE RESULT CARD'}
+ const cmd=document.querySelector('.command');
+ cmd.setAttribute('aria-busy',String(busy));
+ $('command-state').textContent=busy?'Resolving…':run.pendingSwitch?'Your ally fainted. Choose who comes next.':'Choose a move';
+ renderMoves(run);
+ $('moves').querySelectorAll('button').forEach(b=>{if(busy)b.disabled=true});
+ $('party-button').disabled=busy;
+ const labOn=isLab(run);$('lab-tools').hidden=!labOn;
+ if(labOn){$('lab-undo').disabled=busy||!canUndo(lab);$('lab-retry').disabled=busy;$('lab-compare').disabled=busy||run.pendingSwitch}
+ const stg=stageForFallen(run.foe.filter(m=>m.hp<=0).length);
+ $('bar-title').textContent=`Turn ${String(run.turn).padStart(2,'0')} · ${STAGE_NAMES[stg]}${run.mode==='practice'?(labOn?' · Lab':' · Practice'):''}`;
 }
-function shareText(){let marks=run.foe.map(x=>x.hp===0?'■':'□').join('');return `DAILY SILVER — ${run.mode==='daily'?run.date:'PRACTICE'}\n${run.phase==='won'?'✦ THE SUMMIT IS YOURS':'✳ THE SUMMIT REMEMBERS'}\nRed: ${marks}\nSurvivors: ${alive(run.player)}/6 · Turns: ${run.turn-1} · Score: ${Math.max(0,battleScore(run))}\n#DailySilver`}
-function openModal(kicker,html){$('modal').classList.toggle('modal-settings',kicker==='PERSONALIZE / SYSTEM');$('modal').classList.toggle('modal-archive',kicker==='SAVE FILES / ARCHIVE');$('modal').classList.toggle('modal-recap',kicker==='BATTLE / TURN RECAP');$('modal-kicker').textContent=kicker;$('modal-body').innerHTML=html;if(!$('modal').open)$('modal').showModal()}
-function showTurnRecap(){
+function syncAudio(){
  if(!run)return;
- const lineup=(party,label)=>`<div class="recap-lineup"><span>${label}</span><div>${party.map(mon=>spriteHTML(mon)).join('')}</div></div>`;
- const {knockouts,decisive}=replayMoments(run);
- const cards=knockouts.map((note,i)=>{
-  const mon=(note.side==='e'?run.foe:run.player)?.[note.index];
-  const cause=note.move?`${note.actor} used ${note.move}.`:'The field record did not capture the finishing move.';
-  return `<button type="button" class="replay-highlight ${note.side==='e'?'foe-down':'ally-down'}" data-recap-turn="${Number(note.turn)||0}" aria-label="Turn ${note.turn}: ${htmlSafe(note.name)} fainted"><span class="replay-index">${String(i+1).padStart(2,'0')} / TURN ${String(note.turn).padStart(2,'0')}</span>${mon?spriteHTML(mon):''}<span><strong>${htmlSafe(note.name.toUpperCase())} FAINTED</strong><small>${note.side==='e'?"RED'S TEAM":'YOUR TEAM'} / ${htmlSafe(cause)}</small></span></button>`;
- }).join('');
- const decisiveCard=decisive?`<div class="replay-decisive"><span>DECISIVE TURN / ${String(decisive.turn).padStart(2,'0')}</span><strong>${decisive.kind==='finisher'?`${htmlSafe(decisive.actor)} used ${htmlSafe(decisive.move)} against ${htmlSafe(decisive.target)}.`:decisive.kind==='final-faint'?`${htmlSafe(decisive.target)} fell. The battle ended on turn ${decisive.turn}.`:'The final turn was recorded before detailed highlights were added.'}</strong></div>`:'';
- openModal('BATTLE / TURN RECAP',`<div class="recap-cover"><span class="archive-kicker">SUMMIT FIELD RECORD / ${htmlSafe(run.date)}</span><h2>${run.phase==='won'?'THE SUMMIT WAS YOURS.':run.phase==='lost'?'THE SUMMIT ENDURED.':'THE BATTLE CONTINUES.'}</h2><p>${Math.max(0,run.turn-1)} TURNS &middot; ${alive(run.player)} ALLIES STANDING</p></div><div class="recap-lineups">${lineup(run.player,'YOUR TEAM')}${lineup(run.foe,"RED'S TEAM")}</div>${decisiveCard}<div class="archive-section-head"><span>KNOCKOUT HIGHLIGHTS</span><small>${knockouts.length} MOMENTS</small></div><div class="replay-moments">${cards||'<p class="replay-empty">No knockouts recorded yet.</p>'}</div><div class="archive-section-head"><span>TURN BY TURN</span><small>${run.log.length} FIELD NOTES</small></div><div class="recap-timeline">${recapMarkup(run.log,run.log.length,decisive?.turn)}</div>`);
+ const fallen=run.foe.filter(m=>m.hp<=0).length,p=active(run,'p');
+ setEncounterState({stage:stageForFallen(fallen),foesDown:fallen,critical:p.hp/p.maxHp<.24&&p.hp>0});
+ setAmbience(stageForFallen(fallen));
 }
-function showHow(){openModal('FIELD GUIDE / 001',`<h2>ONE SUMMIT. ONE SAVE.</h2><p>Daily Silver is a standalone, <strong>unofficial fan-made Generation II-inspired</strong> battle challenge. Each UTC day gives every player the same six randomized Pokémon, with predefined moves and held items.</p><ul><li><strong>1. Make your move:</strong> Pick one of four attacks, or switch to another ally. The other trainer responds automatically.</li><li><strong>2. Outlast six:</strong> Defeat Red's six familiar Pokémon before your last ally falls.</li><li><strong>3. One daily result:</strong> Your daily result is locked after a win or loss. You can resume a battle if you close the browser.</li><li><strong>4. Practice forever:</strong> Practice creates new teams and never changes your daily result.</li><li><strong>5. Know the era:</strong> No Fairy type or abilities; physical and special damage depend on the move's <em>type</em>, just like Gen II. This is a curated simulation, not a ROM or pixel-perfect Crystal emulator.</li><li><strong>6. Controls:</strong> Click / tap moves, press <strong>1–4</strong> to attack, <strong>P</strong> for party, and <strong>Esc</strong> to dismiss dialogs.</li></ul><p><strong>Privacy:</strong> Runs and scores live only in your browser's localStorage. Clearing browser data removes them. The daily limit isn't tamper-proof.</p>`)}
-function validArchiveDate(date){return /^\d{4}-\d{2}-\d{2}$/.test(date)&&date<today&&Date.parse(date+'T00:00:00Z')>=Date.parse('2026-01-01T00:00:00Z')}
-function replayArchive(date){if(!validArchiveDate(date))return;run=createRun({mode:'practice',date,seed:dailySeed(date)});store.set('practice',run);$('modal').close();sfx('select');battleView({intro:true})}
-function recordTeamMarkup(entry){
- if(!Array.isArray(entry.party)||!entry.party.length)return '<span class="record-team-empty">TEAM DETAILS UNAVAILABLE FOR THIS RECORD</span>';
- return entry.party.slice(0,6).map(name=>{
-  const label=htmlSafe(String(name).slice(0,40));let art='';
-  try{art=spriteHTML(String(name))}catch{} // Older or expanded records may have names outside the local sprite map.
-  return `<span class="record-mon">${art}<small>${label}</small></span>`;
- }).join('');
+function renderAll(){renderHud(stage.display||run);renderCommand();syncAudio()}
+
+// ---------------------------------------------------------------- intro card, skip control
+function showIntro(c){
+ const mon=stage.display?.foe?.[c.index],card=BOSS_ENTRANCES[c.name];if(!mon||!card)return;
+ const el=$('intro-card');el.style.setProperty('--tc',pkmnColor(mon.types[0]));
+ el.innerHTML=`<small>Red's team · ${c.index+1} of 6</small><strong>${esc(c.name.toUpperCase())}</strong><em>${esc(card.title)}</em><p>${esc(card.line)}</p>`;el.hidden=false;
+ setTimeout(hideIntro,Math.round(1500/rate()));
 }
-function showRecords(){
- const s=stats(),r=records().filter(x=>x&&x.mode==='daily'&&typeof x.date==='string');
- const wins=s.played?Math.round(s.wins/s.played*100):0;
- const lastDays=Array.from({length:21},(_,i)=>{const d=new Date(today+'T00:00:00Z');d.setUTCDate(d.getUTCDate()-i-1);return d.toISOString().slice(0,10)});
- const dateRecords=new Map(r.map(x=>[x.date,x]));
- const cards=r.length?r.slice(0,30).map((x,i)=>{
-  const score=Number.isFinite(x.score)?Math.max(0,x.score).toLocaleString('en-US'):'--';
-  const survivors=Number.isInteger(x.remaining)?Math.max(0,Math.min(6,x.remaining)):'--';
-  const turns=Number.isInteger(x.turns)?Math.max(0,x.turns-1):'--';
-  return `<article class="record-card ${x.won?'win':'loss'}"><header><span>FILE ${String(i+1).padStart(3,'0')} / ${htmlSafe(x.date)}</span><strong>${x.won?'VICTORY':'DEFEAT'}</strong></header><div class="record-card-title">${x.won?'THE SUMMIT WAS YOURS.':'THE SUMMIT ENDURED.'}</div><div class="record-team" aria-label="Team fielded">${recordTeamMarkup(x)}</div><div class="record-moment">${momentMarkup(x.moment,x.won)}</div><footer><span><b>${survivors}/6</b><small>SURVIVORS</small></span><span><b>${turns}</b><small>TURNS</small></span><span><b>${score}</b><small>SCORE</small></span></footer></article>`;
- }).join(''):'<div class="archive-empty"><span aria-hidden="true">&#10022;</span><strong>YOUR STORY BEGINS HERE.</strong><p>Finish an official daily challenge to add its team and result to the archive.</p></div>';
- openModal('SAVE FILES / ARCHIVE',`<div class="archive-cover"><span class="archive-kicker">THE SILVER ARCHIVES / PERSONAL RECORD</span><span class="archive-emblem" aria-hidden="true">&#10022;</span><h2>HALL OF <em>FAME.</em></h2><p>Every official run leaves a record on this device.</p></div><div class="record-stats"><div><b>${s.wins}</b><small>VICTORIES</small></div><div><b>${wins}%</b><small>WIN RATE</small></div><div><b>${s.best}</b><small>BEST STREAK</small></div></div><div class="archive-section-head"><span>01 / COMPLETED CHALLENGES</span><small>${s.played} RECORDED</small></div><div class="record-list">${cards}</div><details class="archive-replays"><summary><span>02 / REPLAY PAST DAYS</span><small>21 SEEDS &middot; PRACTICE ONLY</small></summary><p>Archive replays cannot rewrite your original daily results.</p><div class="archive-list">${lastDays.map(d=>`<button type="button" data-archive="${d}">${d}<small>${dateRecords.has(d)?dateRecords.get(d).won?'WON':'LOST':'UNPLAYED'} &middot; PRACTICE REPLAY &rarr;</small></button>`).join('')}</div></details><div class="archive-data"><div class="settings-row"><label>Backup your save history</label><button data-export="1" type="button">EXPORT JSON &darr;</button></div><div class="settings-row"><label>Restore a saved backup</label><button data-import="1" type="button">IMPORT JSON &uarr;</button></div></div>`);
+function hideIntro(){$('intro-card').hidden=true}
+function skipUi(on,label='Skip'){$('skip-fab').hidden=!on;$('skip-label').textContent=label}
+function skip(){if(stage.cinematic)stage.skipCinematic();director.skip()}
+$('skip-fab').addEventListener('click',skip);
+
+// ---------------------------------------------------------------- starting battles
+async function enterBattle({fresh,intro}){
+ setView('game');
+ stage.setDisplay(run,{mode:'battle',snap:true});
+ setOutcome('');renderAll();
+ setMusicMode('battle');
+ if(fresh){
+  busy=true;renderCommand();const my=++token;skipUi(true,'Skip intro');$('hud').hidden=true;
+  setMusicMode('cinematic');
+  await stage.playCinematic('opening');
+  if(my!==token||view!=='game')return;
+  $('hud').hidden=false;setMusicMode('battle');
+  // first send-out: both sides arrive in one deliberate beat sequence
+  stage.setDisplay(run,{mode:'battle',snap:true});stage.hide('p',true);stage.hide('e',true);
+  const beats=buildBeats([{kind:'switch',side:'e',index:run.eActive,name:active(run,'e').name,voluntary:true},{kind:'switch',side:'p',index:run.pActive,name:active(run,'p').name,voluntary:true}]);
+  const plan=planSequence(beats,{names:names({p:run.player,e:run.foe},{p:run.pActive,e:run.eActive}),reduced:reducedMotion(),seenFoes:[...introduced]});
+  introduced.add(run.eActive);run.introduced=[...introduced];saveRun(run);
+  await director.play(plan.cues,stage.cues,{rate:rate()});
+  if(my!==token)return;
+  stage.hide('p',false);stage.hide('e',false);stage.settleTo(run);
+  busy=false;skipUi(false);hideIntro();setOutcome(`Your ${active(run,'p').name} faces ${active(run,'e').name}.`);renderAll();focusFirstMove();
+ }else{
+  busy=false;renderAll();
+  if(run.pendingSwitch)openParty(true);
+ }
 }
-function showSettings(){
- const speeds=[['.5','CINEMATIC','Take it all in'],['1','CLASSIC','The intended rhythm'],['1.5','SWIFT','A little quicker'],['2','RAPID','Skip the pauses'],['3','TURBO','Straight to the action']];
- const speedCards=speeds.map(([value,title,description])=>`<label class="speed-option"><input type="radio" name="fx-rate" value="${value}" ${Number(value)===fxRate?'checked':''}><span class="speed-option-surface"><strong>${value}&times;</strong><b>${title}</b><small>${description}</small></span></label>`).join('');
- openModal('PERSONALIZE / SYSTEM',`<div class="settings-panel">
-  <div class="settings-intro"><span class="settings-overline">YOUR JOURNEY, YOUR PACE</span><h2>TUNE THE <em>EXPERIENCE.</em></h2><p>Make the summit feel right. Your preferences stay on this device.</p></div>
-  <fieldset class="settings-section settings-speed"><legend><span>01 / BATTLE PACING</span><small>Choose an animation rhythm</small></legend><div class="speed-choices">${speedCards}</div></fieldset>
-  <div class="settings-section settings-sound"><div class="settings-sound-head"><span class="settings-section-title">02 / SOUND & ATMOSPHERE<small>An original synthesized soundtrack</small></span><label class="sound-switch"><input id="sound-enabled" type="checkbox" ${isSoundOn()?'checked':''}><span class="sound-switch-track" aria-hidden="true"><span></span></span><span class="switch-caption">SOUND <b id="sound-state">${isSoundOn()?'ON':'OFF'}</b></span></label></div>
-   <div class="volume-row"><label for="volume-level">OUTPUT LEVEL</label><input id="volume-level" aria-label="Audio volume" type="range" min="5" max="100" value="${Math.round(getMasterVolume()*100)}"><output id="volume-output" for="volume-level">${Math.round(getMasterVolume()*100)}%</output></div>
-   <div class="volume-row"><label for="music-level">MUSIC MIX</label><input id="music-level" aria-label="Music balance against battle effects" type="range" min="0" max="100" value="${Math.round(getMusicLevel()*100)}"><output id="music-output" for="music-level">${Math.round(getMusicLevel()*100)}%</output></div>
-   <p class="mix-note">Battle effects briefly lower the soundtrack so every action stays clear.</p></div>
-  <div class="settings-section settings-mix-display"><span class="settings-section-title">03 / DISPLAY<small>Read the battle at a glance</small></span><label class="contrast-toggle"><input id="contrast-enabled" type="checkbox" ${highContrast?'checked':''}><span class="contrast-check" aria-hidden="true"></span><span><strong>HIGH CONTRAST</strong><small>Clearer battle text, cards and HP bars</small></span></label></div>
-  <div class="settings-section settings-data"><div><span class="settings-section-title">04 / YOUR SAVE FILES<small>Archive, import and continue</small></span></div><div class="settings-data-actions"><button type="button" data-show-records="1"><span aria-hidden="true">&#9638;</span> VIEW ARCHIVE <span aria-hidden="true">&rarr;</span></button><button type="button" data-import="1"><span aria-hidden="true">&#8679;</span> RESTORE BACKUP <span aria-hidden="true">&rarr;</span></button></div></div>
-  <p class="settings-note">Reduced-motion settings are respected. Combat animation can also be skipped. Back up your saves before clearing your browser data.</p></div>`)
+function inferIntroduced(b){
+ const s=new Set(Array.isArray(b.introduced)?b.introduced:[]);
+ b.foe.forEach((m,i)=>{if(m.hp<m.maxHp||m.hp<=0||i===b.eActive)s.add(i)});return s;
+}
+function startRecordingFor(b,{resume}){
+ if(resume){const r=loadReplay(replayId(b));if(r&&r.seed===b.seed&&r.turns.length===Math.max(0,b.turn-1))return r;return null}
+ return startRecording(b);
+}
+function launchDaily(){
+ refreshDay();
+ const saved=loadRun(dailyKey(today));
+ if(saved&&saved.phase!=='battle'){run=saved;rec=null;showResults({ending:false});return}
+ sfx('select');
+ run=saved||createRun({mode:'daily',date:today});
+ const fresh=!saved;
+ if(fresh){saveRun(run);introduced=new Set();rec=startRecordingFor(run,{resume:false})}
+ else{introduced=inferIntroduced(run);rec=startRecordingFor(run,{resume:true})}
+ lab=createLabSession();
+ transition(()=>{enterBattle({fresh})});
+}
+function launchPractice(opts){
+ sfx('select');
+ const {resume,focus=0,assist=true,retryLast=false}=opts;
+ const saved=loadRun('practice');
+ if(resume&&saved&&saved.phase==='battle'){run=saved;introduced=inferIntroduced(run);rec=startRecordingFor(run,{resume:true});lab=createLabSession();transition(()=>enterBattle({fresh:false}));return}
+ if(retryLast&&saved)run=retry(saved.lab?saved:{...saved,lab:{v:1,undos:0,retries:0,focus:null}});
+ else run=startLab({focus});
+ if(!assist)delete run.lab;
+ saveRun(run);introduced=new Set();rec=startRecording(run);lab=createLabSession();
+ transition(()=>{enterBattle({fresh:true})});
 }
 
-function exportSave(){const entries={};for(let i=0;i<localStorage.length;i++){const key=localStorage.key(i);if(!key?.startsWith(APP_ID+':'))continue;const name=key.slice((APP_ID+':').length);const value=store.get(name);if(value!==null)entries[name]=value}entries.volume=getMasterVolume();const data={app:'daily-silver',exportVersion:2,exportedAt:new Date().toISOString(),entries};const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='daily-silver-backup-'+today+'.json';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000)}
-$('daily-button').addEventListener('click',()=>launch('daily'));
-$('practice-button').addEventListener('click',()=>launch('practice'));
-$('brand').addEventListener('click',e=>{e.preventDefault();navigate(viewHome)});
-$('leave-button').addEventListener('click',()=>navigate(viewHome));
-$('how-button').addEventListener('click',showHow);$('settings-button').addEventListener('click',showSettings);$('records-button').addEventListener('click',showRecords);
-$('modal-close').addEventListener('click',()=>$('modal').close());
-// Native <dialog> keeps ESC/focus trapping. Only taps truly outside its bounds dismiss it.
-$('modal').addEventListener('click',event=>{
- if(event.target!==$('modal'))return;
- const rect=$('modal').getBoundingClientRect();
- const outside=event.clientX<rect.left||event.clientX>rect.right||event.clientY<rect.top||event.clientY>rect.bottom;
- if(outside)$('modal').close();
+// ---------------------------------------------------------------- turn flow
+function focusFirstMove(){if(isSheetOpen())return;const b=$('moves').querySelector('.move-main:not([disabled])');if(b&&!busy&&(document.activeElement===document.body||!document.activeElement))b.focus({preventScroll:true})}
+async function act(action){
+ if(busy||view!=='game'||!run||isSheetOpen()||stage.cinematic)return;
+ if(run.pendingSwitch&&action.kind!=='switch')return;
+ const before=clone(run);
+ if(isLab(run))remember(lab,run);
+ if(!turn(run,action)){if(isLab(run)&&lab.stack.length)lab.stack.pop();return}
+ const my=++token;busy=true;lastBefore=before;
+ saveRun(run);
+ if(rec){recordTurn(rec,run,action);if(run.phase!=='battle')finishRecording(rec,run);saveReplay(rec)}
+ const events=run.visualEvents||[];
+ skipUi(true,'Skip');renderCommand();
+ const cur={p:before.pActive,e:before.eActive};
+ stage.setDisplay(before,{mode:'battle',snap:false});
+ const beats=buildBeats(events);
+ const plan=planSequence(beats,{names:names({p:before.player,e:before.foe},cur),reduced:reducedMotion(),seenFoes:[...introduced],advance:b=>{if(b.type==='switch')cur[b.side]=b.index}});
+ for(const b of beats)if(b.type==='switch'&&b.side==='e')introduced.add(b.index);
+ run.introduced=[...introduced];
+ try{await director.play(plan.cues,stage.cues,{rate:rate()})}finally{
+  if(my===token){
+   busy=false;skipUi(false);hideIntro();stage.clear();
+   if(view==='game'){
+    stage.settleTo(run);renderAll();
+    setOutcome(plan.summary||'');announce(turnSummary(before,run));
+    if(isLab(run)){
+     const notes=explainTurn(before,run);$('lab-notes').hidden=!notes.length;$('lab-notes').innerHTML=notes.map(n=>`<span><b>${esc(n.tone.toUpperCase())}</b> ${esc(n.text)}</span>`).join('');
+    }
+    if(run.phase!=='battle'){endBattle()}
+    else if(run.pendingSwitch){openParty(true)}
+    else focusFirstMove();
+   }
+  }
+ }
+}
+function turnSummary(before,after){
+ const lines=after.log.filter(l=>l.turn===before.turn).map(l=>l.text);
+ return lines.slice(-4).join(' ');
+}
+
+// ---------------------------------------------------------------- party / dossier
+function openParty(forced=false){
+ if(!run||(busy&&!forced))return;
+ dossierSheet(run,{party:true,openIndex:forced?run.player.findIndex((m,i)=>m.hp>0&&i!==run.pActive):-1,mustSwitch:forced||run.pendingSwitch,title:forced?'Choose your next ally':'Party',onSwitch:i=>{forceClose();act({kind:'switch',index:i})}});
+}
+function openMoveInfo(i){const p=active(run,'p');moveSheet(p.moves[i],p,active(run,'e'),run)}
+
+// ---------------------------------------------------------------- ending + results
+async function endBattle(){
+ recordResult(run);
+ const won=run.phase==='won';
+ busy=true;renderCommand();
+ await playEnding(won);
+ busy=false;
+ showResults({ending:false});
+}
+async function playEnding(won){
+ const my=++token;
+ skipUi(true,'Skip');$('hud').hidden=true;setOutcome('');
+ const state={survivors:run.player.filter(m=>m.hp>0),fallen:run.player[run.pActive],victor:run.foe.find(m=>m.hp>0)||run.foe[run.eActive]};
+ setAmbience(null);setMusicMode(won?'victory':'defeat');playStinger(won?'victory':'defeat');
+ await stage.playCinematic(won?'victory':'defeat',{state,hold:true});
+ if(my!==token)return;
+ skipUi(false);
+}
+function showResults({ending}){
+ hideIntro();stage.clear();
+ const won=run.phase==='won';
+ setView('results');
+ $('hud').hidden=true;
+ stage.showEnding(won?'victory':'defeat',{survivors:run.player.filter(m=>m.hp>0),fallen:run.player[run.pActive],victor:run.foe.find(m=>m.hp>0)||run.foe[run.eActive]});
+ setMusicMode(won?'victory':'defeat');setAmbience(null);
+ const turns=Math.max(0,run.turn-1),sur=alive(run.player),score=Math.max(0,battleScore(run));
+ const moment=run.moment?(run.moment.kind==='finisher'?`${run.moment.actor} finished it with ${run.moment.move}.`:`${run.moment.target} fell on turn ${run.moment.turn}.`):'';
+ const hasRec=!!(rec&&rec.turns?.length)||!!loadReplay(replayId(run));
+ $('result-body').className='result '+(won?'is-victory':'is-defeat');
+ $('result-body').innerHTML=`
+  <p class="kicker" style="margin:0;color:var(--muted);letter-spacing:.14em;font-weight:700;font-size:13px">${run.mode==='daily'?'DAILY '+esc(run.date):'PRACTICE'}</p>
+  <h2>${won?'The summit is yours.':'The mountain endures.'}</h2>
+  <p class="lede">${won?'Dawn reaches the summit. Red\'s last light goes out.':'Wind and stillness return. Another team will climb tomorrow.'}</p>
+  <div class="stats"><div><b>${turns}</b><small>Turns</small></div><div><b>${sur}/6</b><small>Survivors</small></div><div><b>${score.toLocaleString('en-US')}</b><small>Score</small></div></div>
+  <ul class="party-row">${run.player.map(m=>`<li class="${m.hp<=0?'out':''}">${spriteHTML(m)}<span>${esc(m.name.toUpperCase())}</span></li>`).join('')}</ul>
+  ${moment?`<p class="moment">${esc(moment)}</p>`:''}
+  <div class="actions">
+   ${won?`<button class="btn btn-primary" data-r="card" type="button">${icon('down')}<span>Save result card</span></button><button class="btn btn-secondary" data-r="practice" type="button">Practice again</button>`
+        :`<button class="btn btn-primary" data-r="practice" type="button">${icon('flask')}<span>Rematch in the lab</span></button><button class="btn btn-secondary" data-r="card" type="button">Save result card</button>`}
+   <button class="btn btn-secondary" data-r="share" type="button">Copy result</button>
+   ${hasRec?`<button class="btn btn-secondary" data-r="replay" type="button">${icon('play')}<span>Watch the battle</span></button>`:''}
+   <button class="btn btn-quiet" data-r="ending" type="button"><span>Replay ending</span></button>
+   <button class="btn btn-quiet" data-r="home" type="button"><span>Back to summit</span></button>
+  </div>
+  <p class="note" style="text-align:center">${run.mode==='daily'?'Your official daily result is locked on this device until tomorrow.':'Practice results never affect your daily streak.'}${hasRec?'':' This battle has a text recap only.'}</p>`;
+ $('bar-title').textContent=won?'Victory':'Defeat';
+ window.scrollTo({top:0});
+}
+$('result-body').addEventListener('click',async e=>{
+ const b=e.target.closest('[data-r]');if(!b||!run)return;
+ switch(b.dataset.r){
+  case 'home':showHome();break;
+  case 'practice':labSheetOpen();break;
+  case 'card':downloadCard(b);break;
+  case 'share':try{await navigator.clipboard.writeText(shareText());toast('Result copied')}catch{openSheet('Copy result',`<textarea readonly style="width:100%;min-height:160px;background:#0d1736;color:inherit;border:0;border-radius:8px;padding:10px">${esc(shareText())}</textarea>`)}break;
+  case 'replay':startReplay(replayId(run));break;
+  case 'ending':{$('panel-results').hidden=true;await playEnding(run.phase==='won');$('panel-results').hidden=false;stage.showEnding(run.phase==='won'?'victory':'defeat',{survivors:run.player.filter(m=>m.hp>0),fallen:run.player[run.pActive],victor:run.foe.find(m=>m.hp>0)||run.foe[run.eActive]})}break;
+ }
 });
-const backupPicker=document.createElement('input');backupPicker.type='file';backupPicker.accept='.json,application/json';backupPicker.hidden=true;document.body.append(backupPicker);
-backupPicker.addEventListener('change',async()=>{
- const file=backupPicker.files?.[0];backupPicker.value='';if(!file)return;
+function shareText(){const marks=run.foe.map(x=>x.hp===0?'■':'□').join('');return `DAILY SILVER ${run.mode==='daily'?run.date:'PRACTICE'}\n${run.phase==='won'?'The summit is mine':'The summit endures'}\nRed: ${marks}\nSurvivors ${alive(run.player)}/6 · Turns ${run.turn-1} · Score ${Math.max(0,battleScore(run))}\n#DailySilver`}
+
+// result card (same-origin sprites only)
+function loadCardSprite(mon){return new Promise(resolve=>{const image=new Image();image.onload=()=>{try{const c=document.createElement('canvas');c.width=image.naturalWidth;c.height=image.naturalHeight;const g=c.getContext('2d',{willReadFrequently:true});g.drawImage(image,0,0);const px=g.getImageData(0,0,c.width,c.height);clearWhiteBackdrop(px.data,px.width,px.height);g.putImageData(px,0,0);resolve(c)}catch{resolve(image)}};image.onerror=()=>resolve(null);image.src=localSprite(mon)})}
+const loadArt=src=>new Promise(r=>{const i=new Image();i.onload=()=>r(i);i.onerror=()=>r(null);i.src=src});
+async function downloadCard(button){
+ const result=run,label=button.querySelector('span')?.textContent||button.textContent;button.disabled=true;
  try{
-  if(file.size>2_000_000)throw Error('File exceeds the 2 MB backup limit.');
-  const values=validateBackup(await file.text());
-  if(!confirm(`Restore ${Object.keys(values).length} save entries? Existing entries with the same keys will be replaced. Make a backup first if needed.`))return;
-  for(const [key,value] of Object.entries(values))store.set(key,value);
-  fxRate=Math.max(.5,Math.min(3,Number(store.get('fx-rate'))||1));
-  if(Object.hasOwn(values,'volume'))setMasterVolume(values.volume);
-  if(Object.hasOwn(values,'music-level'))setMusicLevel(values['music-level']);
-  if(Object.hasOwn(values,'high-contrast'))setContrast(values['high-contrast']);
-  if(Object.hasOwn(values,'sound-enabled'))setSound(values['sound-enabled']);
-  $('modal').close();viewHome();
-  alert('Save restoration completed.');
- }catch(error){alert('Could not restore backup: '+error.message)}
+  const won=result.phase==='won';
+  const [sprites,bg]=await Promise.all([Promise.all(result.player.map(loadCardSprite)),loadArt(`./assets/art/summit/${won?'dawn':'aftermath'}.png`)]);
+  const c=document.createElement('canvas');c.width=1200;c.height=630;const g=c.getContext('2d');g.imageSmoothingEnabled=false;
+  g.fillStyle='#0a1226';g.fillRect(0,0,1200,630);
+  if(bg)g.drawImage(bg,0,0,768,398,0,0,1200,622);
+  g.fillStyle='rgba(8,16,36,.62)';g.fillRect(0,0,1200,630);
+  g.fillStyle='#f3d98c';g.font='700 24px "Segoe UI",system-ui,sans-serif';g.fillText('DAILY SILVER  ·  '+(result.mode==='daily'?result.date:'PRACTICE'),56,70);
+  g.fillStyle='#eef4fb';g.font='800 78px "Segoe UI",system-ui,sans-serif';g.fillText(won?'The summit is mine.':'The mountain endures.',54,160);
+  sprites.forEach((s,i)=>{const mon=result.player[i],x=56+i*184,y=214;g.fillStyle='rgba(17,29,58,.9)';g.fillRect(x,y,172,196);
+   if(s){const sw=s.naturalWidth||s.width,sh=s.naturalHeight||s.height,k=Math.min(124/sw,124/sh),dw=Math.round(sw*k),dh=Math.round(sh*k);g.save();g.globalAlpha=mon.hp>0?1:.4;g.drawImage(s,Math.round(x+(172-dw)/2),Math.round(y+10+(124-dh)/2),dw,dh);g.restore()}
+   g.textAlign='center';g.fillStyle=mon.hp>0?'#eef4fb':'#8393b3';g.font='700 17px "Segoe UI",system-ui,sans-serif';g.fillText(mon.name.toUpperCase(),x+86,y+158,160);g.fillStyle=mon.hp>0?'#94e3ba':'#f19590';g.font='700 13px "Segoe UI",system-ui,sans-serif';g.fillText(mon.hp>0?'SURVIVED':'FAINTED',x+86,y+180);g.textAlign='left'});
+  g.fillStyle='rgba(17,29,58,.92)';g.fillRect(56,436,1088,140);
+  g.fillStyle='#f3d98c';g.font='800 40px "Segoe UI",system-ui,sans-serif';g.fillText('SCORE '+Math.max(0,battleScore(result)).toLocaleString('en-US'),84,500);
+  g.fillStyle='#eef4fb';g.font='700 28px "Segoe UI",system-ui,sans-serif';g.fillText(`SURVIVORS ${alive(result.player)}/6`,84,552);g.fillText(`TURNS ${result.turn-1}`,640,500);g.fillStyle='#a7bad4';g.fillText(`RED ${alive(result.foe)}/6 LEFT`,640,552);
+  const a=document.createElement('a');a.download='daily-silver-'+(result.mode==='daily'?result.date:'practice')+'.png';a.href=c.toDataURL('image/png');document.body.append(a);a.click();a.remove();sfx('select');toast('Result card saved');
+ }catch(err){console.error(err);toast('Could not save the card')}finally{button.disabled=false}
+}
+
+// ---------------------------------------------------------------- replay viewer
+let rp={playing:false,index:0,speed:1,token:0,rec:null};
+function startReplay(id){
+ const r=typeof id==='string'?loadReplay(id):id;if(!r){toast('No recording for this battle');return}
+ forceClose();director.cancel();token++;busy=false;stage.clear();
+ rp={playing:false,index:0,speed:1,token:rp.token+1,rec:r};
+ transition(()=>{
+  setView('replay');$('hud').hidden=false;skipUi(false);
+  stage.setMode('battle');
+  const n=r.turns.length;
+  $('rp-scrub').max=String(n);$('rp-scrub').value='0';
+  $('rp-marks').innerHTML=knockoutMarkers(r).map(k=>`<i class="${k.side==='p'?'ally':''}" style="left:${(k.turn+1)/Math.max(1,n)*100}%"></i>`).join('');
+  $('rp-kos').innerHTML=knockoutMarkers(r).map(k=>`<li><button type="button" class="${k.side==='p'?'ally':'foe'}" data-ko="${k.turn}">T${r.turns[k.turn].n} · ${esc(k.name)} ✕</button></li>`).join('');
+  $('bar-title').textContent=`Replay · ${r.mode==='daily'?r.date:'Practice'}${r.truncated?' · truncated':''}`;
+  seekReplay(0);
+ });
+ setMusicMode('battle');
+}
+function replayNames(r,cur){return names({p:r.player,e:r.foe},cur)}
+function seekReplay(i){
+ director.cancel();rp.token++;rp.playing=false;updatePlayButton();
+ const r=rp.rec;i=Math.max(0,Math.min(r.turns.length,i));rp.index=i;
+ const state=stateAt(r,i);stage.clear();stage.setDisplay(state,{mode:'battle',snap:true});renderHud(stage.display);
+ $('rp-scrub').value=String(i);setOutcome(i===0?'Start of the battle':`After turn ${r.turns[i-1].n}`);
+ $('rp-status').textContent=`Turn ${i}/${r.turns.length}`;
+}
+function updatePlayButton(){const b=$('rp-play');b.innerHTML=rp.playing?icon('pause'):icon('play');b.setAttribute('aria-label',rp.playing?'Pause':'Play')}
+async function playReplayTurn(){
+ const r=rp.rec,i=rp.index;if(i>=r.turns.length)return false;
+ const my=rp.token,turnData=r.turns[i],prev=stateAt(r,i);
+ const cur={p:prev.pActive,e:prev.eActive};
+ const beats=buildBeats(turnData.ev);
+ const plan=planSequence(beats,{names:replayNames(r,cur),reduced:reducedMotion(),seenFoes:[...Array(6).keys()].filter(k=>prev.foe[k].hp<r.foe[k].maxHp||k===prev.eActive),advance:b=>{if(b.type==='switch')cur[b.side]=b.index}});
+ stage.setDisplay(prev,{mode:'battle',snap:false});
+ await director.play(plan.cues,stage.cues,{rate:rp.speed});
+ if(my!==rp.token)return false;
+ rp.index=i+1;stage.clear();
+ const next=stateAt(r,rp.index);stage.setDisplay(next,{mode:'battle',snap:false});renderHud(stage.display);
+ $('rp-scrub').value=String(rp.index);$('rp-status').textContent=`Turn ${rp.index}/${r.turns.length}`;
+ return true;
+}
+async function playReplay({single=false}={}){
+ if(rp.playing)return;rp.playing=true;updatePlayButton();const my=rp.token;
+ if(rp.index>=rp.rec.turns.length)seekReplay(0),rp.playing=true,updatePlayButton();
+ while(rp.playing&&my===rp.token&&rp.index<rp.rec.turns.length){
+  const ok=await playReplayTurn();if(!ok||single)break;
+  await new Promise(r=>setTimeout(r,250/rp.speed));
+ }
+ if(my===rp.token){rp.playing=false;updatePlayButton()}
+}
+$('rp-play').addEventListener('click',()=>{if(rp.playing){rp.token++;director.cancel();rp.playing=false;updatePlayButton();const s=stateAt(rp.rec,rp.index);stage.clear();stage.setDisplay(s,{mode:'battle',snap:true});renderHud(stage.display)}else playReplay()});
+$('rp-scrub').addEventListener('input',e=>seekReplay(Number(e.target.value)));
+$('rp-speed').addEventListener('change',e=>{rp.speed=Number(e.target.value)});
+$('rp-prev').addEventListener('click',()=>{const ks=knockoutMarkers(rp.rec).map(k=>k.turn+1).filter(t=>t<rp.index);seekReplay(ks.length?ks[ks.length-1]-1:0)});
+$('rp-next').addEventListener('click',()=>{const ks=knockoutMarkers(rp.rec).map(k=>k.turn+1).filter(t=>t>rp.index);seekReplay(ks.length?ks[0]:rp.rec.turns.length)});
+$('rp-decisive').addEventListener('click',()=>{seekReplay(decisiveTurnIndex(rp.rec));playReplay({single:true})});
+$('rp-kos').addEventListener('click',e=>{const b=e.target.closest('[data-ko]');if(b){seekReplay(Number(b.dataset.ko));playReplay({single:true})}});
+$('rp-exit').addEventListener('click',()=>{rp.token++;director.cancel();rp.playing=false;if(run&&run.phase!=='battle'&&run.mode&&replayId(run)===rp.rec.id){showResults({ending:false})}else showHome()});
+$('rp-download').addEventListener('click',()=>{const blob=new Blob([JSON.stringify({app:'daily-silver',replayVersion:2,replay:rp.rec},null,1)],{type:'application/json'});const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`daily-silver-replay-${rp.rec.mode==='daily'?rp.rec.date:'practice'}.json`;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000)});
+
+// ---------------------------------------------------------------- journal
+function recapHTML(log,limit=60){
+ const groups=new Map();for(const e of log.slice(-limit)){const t=Number.isInteger(e.turn)?e.turn:0;if(!groups.has(t))groups.set(t,[]);groups.get(t).push(e)}
+ return [...groups].reverse().map(([t,es])=>`<h3>Turn ${String(t).padStart(2,'0')}</h3><ul class="plain" style="list-style:none;padding:0">${es.map(e=>`<li>${esc(e.text)}</li>`).join('')}</ul>`).join('');
+}
+function journalSheet(){
+ if(!run)return;
+ const id=replayId(run),has=!!(rec&&rec.turns.length)||!!loadReplay(id);
+ openSheet('Battle journal',`
+  <div class="actions" style="justify-content:flex-start">
+   ${has?`<button class="chip-btn" data-j="replay" type="button">${icon('play')}Watch recorded battle</button>`:'<small style="color:var(--muted)">This battle has a text recap only.</small>'}
+   ${run.phase==='battle'?`<button class="chip-btn" data-j="intro" type="button">${icon('retry')}Replay introduction</button>`:''}
+  </div>
+  ${recapHTML(run.log)}`);
+ $('sheet-body').onclick=async e=>{
+  const b=e.target.closest('[data-j]');if(!b)return;
+  if(b.dataset.j==='replay'){if(rec&&rec.turns.length)saveReplay(rec);startReplay(id)}
+  if(b.dataset.j==='intro'){forceClose();if(busy)return;busy=true;renderCommand();const my=++token;skipUi(true,'Skip');$('hud').hidden=true;await stage.playCinematic('opening');if(my!==token)return;$('hud').hidden=false;busy=false;skipUi(false);stage.settleTo(run);renderAll()}
+ };
+}
+
+// ---------------------------------------------------------------- lab
+function labSheetOpen(){
+ const practice=loadRun('practice');
+ labSheet({practice,foeNames:preview?.foe?.map(m=>m.name)||['Pikachu','Espeon','Snorlax','Venusaur','Charizard','Blastoise']});
+ $('sheet-body').onclick=e=>{
+  const b=e.target.closest('[data-act]');if(!b)return;
+  const focus=Number($('lab-focus')?.value||0),assist=$('lab-assist')?.checked!==false;
+  if(b.dataset.act==='lab-resume'){forceClose();launchPractice({resume:true})}
+  if(b.dataset.act==='lab-new'){forceClose();launchPractice({focus,assist})}
+  if(b.dataset.act==='lab-retry-last'){forceClose();launchPractice({retryLast:true,assist})}
+ };
+}
+$('lab-undo').addEventListener('click',()=>{
+ if(busy||!run)return;const prev=undo(lab,run);if(!prev)return;
+ run=prev;saveRun(run);if(rec)rec.turns.splice(Math.max(0,run.turn-1));
+ stage.clear();stage.setDisplay(run,{mode:'battle',snap:true});setOutcome('Undone. Same position, same random state.');$('lab-notes').hidden=true;renderAll();sfx('select');
 });
-$('modal-body').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;if(b.dataset.archive)replayArchive(b.dataset.archive);else if(b.dataset.export)exportSave();else if(b.dataset.import)backupPicker.click();else if(b.dataset.showRecords)showRecords();else if(b.dataset.recapTurn){const turn=Number(b.dataset.recapTurn),dialog=$('modal'),section=$('modal-body').querySelector(`.recap-turn[data-turn="${turn}"]`);if(Number.isInteger(turn)&&section){const offset=section.getBoundingClientRect().top-dialog.getBoundingClientRect().top-108;dialog.scrollTo({top:dialog.scrollTop+offset,behavior:'smooth'});section.classList.remove('recap-jump-focus');requestAnimationFrame(()=>section.classList.add('recap-jump-focus'));setTimeout(()=>section.classList.remove('recap-jump-focus'),1400)}}});
-$('modal-body').addEventListener('change',e=>{if(e.target.name==='fx-rate'){fxRate=Math.max(.5,Math.min(3,Number(e.target.value)||1));store.set('fx-rate',fxRate);}if(e.target.id==='sound-enabled'){setSound(e.target.checked);const state=$('sound-state');if(state)state.textContent=e.target.checked?'ON':'OFF';updateSoundLabel(e.target.checked);$('sound-button').setAttribute('aria-pressed',String(e.target.checked));}if(e.target.id==='volume-level')setMasterVolume(Number(e.target.value)/100)});
-$('modal-body').addEventListener('input',e=>{if(e.target.id==='volume-level'){const out=$('volume-output');if(out)out.textContent=e.target.value+'%';setMasterVolume(Number(e.target.value)/100)}});
-$('modal-body').addEventListener('input',e=>{if(e.target.id==='music-level'){const out=$('music-output');if(out)out.textContent=e.target.value+'%';setMusicLevel(Number(e.target.value)/100)}});
-$('modal-body').addEventListener('change',e=>{if(e.target.id==='contrast-enabled')setContrast(e.target.checked)});
-$('sound-button').addEventListener('click',()=>{if(isSoundOn()&&!isSoundReady())resumeSound();else setSound(!isSoundOn());updateSoundLabel(isSoundOn());$('sound-button').setAttribute('aria-pressed',isSoundOn())});
-$('party-toggle').addEventListener('click',()=>toggleParty());
-for(const eventName of ['click','focusin','pointerover'])$('hero-preview-party').addEventListener(eventName,e=>{const button=e.target.closest('[data-preview]');if(button)previewAlly(Number(button.dataset.preview))});
-$('moves-panel').addEventListener('click',e=>{const b=e.target.closest('[data-move]');if(b)action({kind:'move',index:Number(b.dataset.move)})});
-$('party-panel').addEventListener('click',e=>{const b=e.target.closest('[data-switch]');if(b)action({kind:'switch',index:Number(b.dataset.switch)})});
-$('result-card').addEventListener('click',downloadResultCard);$('result-home').addEventListener('click',()=>navigate(viewHome));$('result-practice').addEventListener('click',()=>{store.set('practice',null);launch('practice')});
-$('result-recap').addEventListener('click',showTurnRecap);
-$('share-button').addEventListener('click',async()=>{const t=shareText();try{await navigator.clipboard.writeText(t);$('share-button').textContent='RESULT COPIED ✓'}catch{openModal('COPY RESULT',`<h2>YOUR RESULT.</h2><textarea readonly style="width:100%;min-height:190px;background:#11172f;color:#fff;padding:10px">${t}</textarea>`)}setTimeout(()=>$('share-button').textContent='COPY BATTLE RESULT ↗',1800)});
-document.addEventListener('keydown',e=>{if($('modal').open||view!=='game'||e.target?.closest?.('input, textarea, select, [contenteditable="true"]'))return;if(/^[1-4]$/.test(e.key)&&!partyOpen&&!run.pendingSwitch){e.preventDefault();action({kind:'move',index:Number(e.key)-1})}if(e.key.toLowerCase()==='p'){e.preventDefault();if(!run.pendingSwitch)toggleParty()}});
-document.addEventListener('visibilitychange',()=>{if(document.hidden)save();else refreshUtcDay()});
-window.addEventListener('focus',refreshUtcDay);
-setInterval(refreshUtcDay,30000);
-window.addEventListener('beforeunload',save);
-installSpriteImageFallback();setScene(null,'home');updateHome();updateSoundLabel(isSoundOn());$('sound-button').setAttribute('aria-pressed',String(isSoundOn()));
-// Browser service worker, optional for offline reload after the first visit.
-if('serviceWorker'in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('./service-worker.js').catch(()=>{});
+$('lab-retry').addEventListener('click',()=>{
+ if(busy||!run)return;run=retry(run);saveRun(run);introduced=new Set();rec=startRecording(run);lab=createLabSession();
+ stage.clear();stage.setDisplay(run,{mode:'battle',snap:true});introduced.add(run.eActive);setOutcome('Retrying the same team and seed.');$('lab-notes').hidden=true;renderAll();sfx('select');
+});
+$('lab-compare').addEventListener('click',()=>{
+ if(busy||!run)return;const p=active(run,'p');
+ const options=p.moves.map((s,i)=>({s,i})).filter(({s})=>s.pp>0);
+ const results=compare(run,options.map(({i})=>({kind:'move',index:i})));
+ compareSheet(results,options.map(({s})=>s.name));
+});
+
+// ---------------------------------------------------------------- data import/export
+function exportSave(){
+ const entries={};for(let i=0;i<localStorage.length;i++){const key=localStorage.key(i);if(!key?.startsWith(APP_ID+':'))continue;const name=key.slice(APP_ID.length+1);const v=store.get(name);if(v!==null)entries[name]=v}
+ const data={app:'daily-silver',exportVersion:2,exportedAt:new Date().toISOString(),entries};
+ const blob=new Blob([JSON.stringify(data)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='daily-silver-backup-'+today+'.json';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);toast('Backup exported');
+}
+const picker=document.createElement('input');picker.type='file';picker.accept='.json,application/json';picker.hidden=true;document.body.append(picker);
+picker.addEventListener('change',async()=>{
+ const file=picker.files?.[0];picker.value='';if(!file)return;
+ try{
+  if(file.size>2_500_000)throw Error('File exceeds the 2.5 MB limit.');
+  const values=validateBackup(await file.text());
+  if(!confirm(`Restore ${Object.keys(values).length} entries? Entries with the same names are replaced.`))return;
+  for(const [k,v] of Object.entries(values))store.set(k,v);
+  if(Object.hasOwn(values,'volume'))setMasterVolume(values.volume);if(Object.hasOwn(values,'music-level'))setMusicLevel(values['music-level']);if(Object.hasOwn(values,'effects-level'))setEffectsLevel(values['effects-level']);
+  if(Object.hasOwn(values,'sound-enabled'))setSound(values['sound-enabled']);
+  applySettings(stage);forceClose();showHome();toast('Backup restored');
+ }catch(err){alert('Could not restore backup: '+err.message)}
+});
+
+// ---------------------------------------------------------------- sheets wiring
+function wireSettings(){
+ const body=$('sheet-body');
+ body.onchange=e=>{
+  const t=e.target;
+  if(t.name==='motion'){settings.motion=t.value;applySettings(stage)}
+  if(t.name==='intensity'){settings.intensity=t.value;applySettings(stage)}
+  if(t.name==='speed'){settings.speed=Number(t.value)}
+  if(t.id==='s-sound'){setSound(t.checked);syncSoundButton()}
+  if(t.id==='s-contrast'){settings.contrast=t.checked;applySettings(stage)}
+ };
+ body.oninput=e=>{
+  const t=e.target,v=Number(t.value)/100;
+  if(t.id==='s-volume'){setMasterVolume(v);$('o-volume').textContent=t.value+'%'}
+  if(t.id==='s-music'){setMusicLevel(v);$('o-music').textContent=t.value+'%'}
+  if(t.id==='s-fx'){setEffectsLevel(v);$('o-fx').textContent=t.value+'%'}
+ };
+ body.onclick=e=>sheetAction(e);
+}
+function sheetAction(e){
+ const b=e.target.closest('[data-act]');if(!b)return;
+ const a=b.dataset.act;
+ if(a==='export')exportSave();
+ else if(a==='import')picker.click();
+ else if(a==='archive'){archiveOpen()}
+ else if(a==='result'){const saved=loadRun(dailyKey(b.dataset.date));if(saved){forceClose();run=saved;rec=null;showResults({ending:false})}}
+ else if(a==='replay'){forceClose();startReplay(b.dataset.id)}
+ else if(a==='archive-play'){
+  const date=b.dataset.date;
+  const existing=loadRun('practice');if(existing&&existing.phase==='battle'&&!confirm('Starting this day replaces your saved practice battle. Continue?'))return;
+  forceClose();run=createRun({mode:'practice',date,seed:dailySeed(date)});run.lab={v:1,undos:0,retries:0,focus:null};saveRun(run);introduced=new Set();rec=startRecording(run);lab=createLabSession();transition(()=>enterBattle({fresh:true}));
+ }
+}
+function archiveOpen(){archiveSheet({today});$('sheet-body').onclick=sheetAction}
+function syncSoundButton(){const on=isSoundOn(),b=$('sound-button');b.setAttribute('aria-pressed',String(on));b.setAttribute('aria-label',on?'Sound on':'Sound off');b.innerHTML=icon(on?'sound':'mute')}
+
+$('settings-button').addEventListener('click',()=>{settingsSheet();wireSettings()});
+$('help-button').addEventListener('click',helpSheet);
+$('archive-button').addEventListener('click',archiveOpen);
+$('journal-button').addEventListener('click',journalSheet);
+$('sound-button').addEventListener('click',()=>{if(isSoundOn()&&!isSoundReady())resumeSound();else setSound(!isSoundOn());syncSoundButton()});
+$('brand').addEventListener('click',()=>{if(view!=='home'&&!busy||view==='replay'||view==='results')showHome();else if(view==='game'&&busy){skip()}else if(view==='game'){if(confirm('Leave the battle? Your progress is saved.'))showHome()}});
+$('daily-button').addEventListener('click',launchDaily);
+$('practice-button').addEventListener('click',labSheetOpen);
+$('team-list').addEventListener('click',e=>{const b=e.target.closest('.team-mon');if(!b)return;const i=Number(b.dataset.i);setFocus(i);dossierSheet(preview,{openIndex:i,foe:preview.foe[0],title:"Today's team"})});
+for(const ev of ['pointerover','focusin'])$('team-list').addEventListener(ev,e=>{const b=e.target.closest('.team-mon');if(b&&view==='home'&&Number(b.dataset.i)!==focusIndex)setFocus(Number(b.dataset.i))});
+$('moves').addEventListener('click',e=>{
+ const info=e.target.closest('[data-info]');if(info){openMoveInfo(Number(info.dataset.info));return}
+ const mv=e.target.closest('[data-move]');if(mv)act({kind:'move',index:Number(mv.dataset.move)});
+});
+$('party-button').addEventListener('click',()=>openParty(false));
+document.addEventListener('keydown',e=>{
+ if(e.ctrlKey||e.metaKey||e.altKey)return;
+ if(e.target?.closest?.('input,textarea,select,[contenteditable="true"]'))return;
+ if(busy&&['Escape',' ','Enter'].includes(e.key)&&!isSheetOpen()){if(view==='game'){e.preventDefault();skip()}return}
+ if(isSheetOpen()||view!=='game'||busy)return;
+ if(/^[1-4]$/.test(e.key)&&!run.pendingSwitch){e.preventDefault();const slot=active(run,'p').moves[Number(e.key)-1];if(slot){if(e.shiftKey)openMoveInfo(Number(e.key)-1);else act({kind:'move',index:Number(e.key)-1})}}
+ if(e.key.toLowerCase()==='p'){e.preventDefault();openParty(false)}
+ if(e.key.toLowerCase()==='j'){e.preventDefault();journalSheet()}
+});
+document.addEventListener('keydown',e=>{if(view==='replay'&&e.key===' '&&!e.target.closest('button,input,select')){e.preventDefault();$('rp-play').click()}});
+document.addEventListener('visibilitychange',()=>{if(document.hidden){if(run)saveRun(run)}else refreshDay()});
+window.addEventListener('focus',refreshDay);setInterval(refreshDay,30000);
+window.addEventListener('beforeunload',()=>{if(run)saveRun(run)});
+
+// ---------------------------------------------------------------- boot
+installSpriteImageFallback();initSheet();syncSoundButton();
+preload().then(()=>{refreshDay()});
+showHome();
+if('serviceWorker'in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('./service-worker.js').then(reg=>{reg.addEventListener('updatefound',()=>{reg.installing?.addEventListener('statechange',function(){if(this.state==='installed'&&navigator.serviceWorker.controller)toast('Update ready. Reload for the new version.',6000)})})}).catch(()=>{});
+// QA hook (only with ?qa in the URL): lets automated review drive effects directly.
+if(new URLSearchParams(location.search).has('qa'))window.__qa={stage,hooks,createRun,startLab,buildBeats,planSequence,setView,renderHud,state:()=>({run,view,busy})};

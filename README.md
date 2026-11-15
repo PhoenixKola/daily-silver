@@ -2,7 +2,22 @@
 
 A fully local, static, **unofficial** Generation II-inspired daily Pokémon battle fan project. No database, hosted APIs, account system, or PHP is necessary **during gameplay**. This is a substantial upgrade to the existing JavaScript Daily Silver project, not an authentic Pokémon Crystal emulator or ROM patch.
 
-## What's new in 2.0
+## 4.0: Summit Redesign
+
+The whole game was redesigned as one authored experience: new home, battle, dossier, archive, results and ending screens; a new pixel-art summit built from generated layers; and a continuous action choreography.
+
+- **Battle presentation:** every action plays as anticipation, release, contact and resolution from one cancellable timeline. Individual choreography for Thunderbolt, Psychic, Body Slam, Giga Drain, Fire Blast and Surf, reusable families for the rest, visible status and field conditions, and recall, arrival and settle send-outs. Skip and cancel always settle to the real battle state.
+- **Evolving summit:** Stillness, Rising Wind, Whiteout and Last Light, with parallax, aurora, mist, wind and snow.
+- **Opening and endings:** a skippable four-second summit opening, a dawn victory and a storm-aftermath defeat.
+- **Team dossier and tactics:** moves, PP, held-item effects, Gen II categories, recoil and recharge warnings, and damage estimates shown as ranges, kept separate from type advantage.
+- **Practice lab:** retry the same seed, undo, compare moves from the same position and random state, practice a chosen opponent, and read plain explanations. Official daily play never has these tools.
+- **Recorded replays:** newly played battles are recorded in a versioned, bounded format (play, pause, speed, knockout jumps, decisive exchange, file download). Older records keep their text recap.
+- **Audio:** layered music following the encounter, stage wind, type-specific impacts, separate victory and defeat resolutions, and an effects level.
+- **Accessibility:** reduced motion, visual intensity and speed are separate settings; keyboard and touch throughout; 44px targets; 320px layouts.
+
+Saves stay in the daily-silver-v1 namespace and remain compatible. See docs/visual-direction.md, docs/asset-workflow.md and docs/asset-provenance.md. Checks: npm test, npm run smoke, npm run art:audit, npm run build, and npm run uat:visual, uat:playthrough, uat:victory or uat:offline.
+
+## History: what was new in 2.0
 
 ### Current visual update
 
@@ -73,9 +88,10 @@ npm run build
 
 - `src/data.js` / `src/engine.js` – species and move definitions, battle rules, scoring and saves
 - `src/extra-species.js` – generated roster extension (empty until you run expansion)
-- `src/app.js` – UI, battle animation queue, Hall of Fame, archive replay, settings, result card
+- `src/app.js`, `src/ui/`, `src/ui.css` - controller, sheets and interface
+- `src/pres/` - beats, planner, director, stage, atmosphere, effects, conditions, cinematics
+- `src/lab.js`, `src/recorder.js`, `src/moveinfo.js` - practice lab, replay recording, move facts and estimates
 - `src/entrances.js` / `src/matchups.js` / `src/replay.js` – rival cards, live type previews and counters, knockout recap data
-- `src/scene.js` – snowy backdrop, sprite renderer, attack effects and atmospheric changes
 - `src/sprites.js` – sprite mapping and white-background cleanup
 - `src/sound.js` – original Web Audio soundtrack and SFX
 - `tools/expand-roster.mjs` – optional Gen II roster installer

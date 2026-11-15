@@ -1,3 +1,9 @@
 ﻿node_modules/
 dist/
 reports/
+
+.scratch/
+art-src/prompts/
+art-src/GENERATION-LOG.md
+art-src/style-bible.txt
+art-src/sources/

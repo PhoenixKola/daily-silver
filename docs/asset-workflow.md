@@ -1,36 +1,26 @@
-# Daily Silver asset workflow
+# Asset workflow
 
-Daily Silver is a plain JavaScript Canvas game. The battle backdrop and effects are drawn in `src/scene.js`; the UI is in `src/app.js` and `src/style.css`. The curated character art is 270 locally cached Crystal front/back PNGs. Do not replace those sprites with generated stand-ins. `src/sprites.js` removes only the exterior white background at display time.
+Daily Silver is plain JavaScript and Canvas. Generated bitmap art is prepared offline and shipped as small PNGs; all animation and interaction are code.
 
-## Tool decision, 30 October 2026
+## Generate
 
-| Tool | Decision | Reason and integration risk | Install method if needed | License |
-| --- | --- | --- | --- | --- |
-| Existing Canvas, CSS and Node scripts | Useful now | Directly produces the game's weather, effect, UI and export assets; no runtime bridge | Already in project; no install | Project code |
-| [Effekseer](https://github.com/effekseer/Effekseer) | Maybe later | Its recorder can produce a transparent sprite sheet, but authoring and export require its GUI; a sheet would need frame timing, alpha and size review before integration | Official portable release, kept outside the shipped game | MIT |
-| [Material Maker](https://github.com/RodZill4/material-maker) | Maybe later | Could generate a texture for a future scene; current pixel art has no texture gap that merits an editor or extra raster asset | Official portable release only if a specific texture is approved | MIT |
-| [Jolt Physics](https://github.com/jrouwe/JoltPhysics) | Not appropriate | Native 3D rigid-body physics; no such gameplay | None | MIT |
-| [Terrain3D](https://github.com/TokisanGames/Terrain3D) | Not appropriate | Godot 3D terrain would require an engine change | None | MIT |
-| [Voxel Tools](https://github.com/Zylann/godot_voxel) | Not appropriate | Godot voxel terrain would require an engine change | None | MIT |
-| [Recast Navigation](https://github.com/recastnavigation/recastnavigation) | Not appropriate | No 3D agents or navmesh | None | zlib |
-| [ozz-animation](https://github.com/guillaumeblanc/ozz-animation) | Not appropriate | Native skeletal animation does not apply to 2D PNG characters | None | MIT |
-| [The Forge](https://github.com/ConfettiFX/The-Forge) | Not appropriate | Native rendering framework would replace the browser Canvas stack | None | Apache 2.0 for its public code; console use has separate terms |
-| [meshoptimizer](https://github.com/zeux/meshoptimizer) | Not appropriate | No triangle mesh assets | None | MIT |
-| [FastNoise2](https://github.com/Auburn/FastNoise2) | Not appropriate | C++ SIMD noise is excessive for this small Canvas snow scene | None | MIT |
+1. Verify the bridge: `node tools/codex-imagegen/imagegen.mjs --doctor --codex "<codex.exe>"`. It is a vendored, audited copy of `Adamdesgns/codex-imagegen` (revision f2727db, MIT) with one local addition, `--model`. It runs Codex read-only, ephemeral, with shell, browser, computer-use, apps, plugins and multi-agent disabled, and uses the existing ChatGPT sign-in (no API key). Each call spends Codex allowance.
+2. Write prompts in `art-src/prompts/` (git-ignored) starting from `art-src/style-bible.txt`, then run `CODEX_BIN=<codex.exe> node tools/art-generate.mjs jobs.json --parallel 4`. Keep a loose reference image for palette and mood only.
+3. Layers go on a flat magenta key, additive effects on pure black, full scenes opaque.
 
-Tiled and LDtk are not needed: the game has one scripted battle scene and no tile map. No tools, global packages or system configuration were installed for this update.
+## Prepare
 
-## Rebuild and verify
+- `node tools/art-lab.mjs layer in.png out.png --key magenta|black --crop 40,398 --pad 8 [--trim]` median-downscales by an exact integer (hard edges, no blur), keys the background to alpha, crops to the 768 x 398 stage and pads for parallax.
+- `node tools/art-lab.mjs sheet in.png assets/art/fx <name> --key black --cell 240 --min 1500` finds separate shapes and places them in equal cells. The result is a **shape library**, not a timed animation: `src/pres/assets.js` names the frames and `src/pres/fx.js` scales, rotates and fades them. Inspect every sheet; do not call a sliced still an animation.
 
-1. Edit the four weather palettes in `snowScene` in `src/scene.js`. They map to 0–1, 2–3, 4–5 and 6 defeated opponents. Keep the 768 × 398 Canvas and the existing sprite origin and scale.
-2. Add a named attack effect in `moveEffect` in the same file. `flight`, `impact`, `outcome` and `finisher` come from the battle event. An attack that misses must never render its impact. Keep shapes crisp with `imageSmoothingEnabled = false`.
-3. Keep result fields optional. Completed runs now have `moment` and summary records have `recordVersion: 2`; old records and the `daily-silver-v1` local storage namespace stay valid.
-4. Run `npm test`, `npm run smoke`, `npm run art:audit`, and `npm run build`. The audit checks 135 species / 270 images and writes `reports/sprite-gallery.html`. Review the game at 1440, 390 and 320 CSS pixels, with and without reduced motion.
+## Ship
 
-The active command card uses the existing local sprite source. Its type accent and HP are rebuilt from battle state, so no new PNG needs exporting. The knockout camera focus is code-native in `src/scene.js` and skips zoom when reduced motion is requested. The music and effect buses, ducking and limiter live in `src/sound.js`; the music mix and contrast settings are optional saved preferences accepted by the backup validator.
+- Add new art to `MANIFEST` in `src/pres/assets.js`. Missing images fail soft (the renderer skips them).
+- `npm run manifest` regenerates `core-manifest.json`; its content hash is the offline cache version, so every release replaces the old cache. `npm run build` does this automatically and copies everything into `dist/` (Vercel serves `dist`).
+- Checks: `npm test`, `npm run smoke`, `npm run art:audit`, `npm run build`, and `npm run uat:visual|playthrough|victory|offline` (screenshots in `reports/uat/`).
 
-Rival entrance copy, real signature move references, and visual motifs live in `src/entrances.js`. The overlay in `src/app.js` and `src/style.css` reuses each front sprite; no new licensed art is needed. Type previews and party counter badges use `src/matchups.js` and the game's own type chart. They recalculate as the opponent, HP, or move PP changes. `src/replay.js` reads the optional knockout list stored with new runs, which survives the 140-line combat log cap. Old runs fall back to their retained log. When changing these features, verify the full and reduced-motion entrance, counter markers at 320-pixel width, and the completed recap on both desktop and phone.
+## Where things live
 
-The integrated Shadow Ball effect is code-native and rebuilds with the game. No Effekseer sheet or `.efkproj` was created or installed. If an authored particle effect is worth adding later, use the [official recorder](https://effekseer.github.io/Help_Tool/en/ToolReference/record.html) in a portable Effekseer release: choose **Export as a single image**, set an explicit frame size and X count, and enable **Original image** transparency. Inspect the exported PNG's alpha, first and last frame, size and pacing before adding a Canvas player. The official command line documentation covers project conversion, not a headless recorder export; this part remains a manual GUI step.
-
-The original scene and effect code require no third-party tool attribution. The bundled Crystal sprites are third-party Pokémon artwork; their existing copyright limits remain as described in the main README. If a future Effekseer runtime or other library is shipped, include its license notice. A rendered sheet alone still needs an asset provenance review.
+- `src/pres/`: beats, families, plan, director, stage, atmosphere, fx, conditions, cinema, assets.
+- `src/lab.js`, `src/recorder.js`, `src/moveinfo.js`: practice laboratory, versioned replay recording, move and item facts with damage estimates.
+- `src/ui/`, `src/ui.css`, `src/app.js`: interface and controller. Save keys stay in the `daily-silver-v1` namespace; replays use `replay:<id>` and `replay-index`.

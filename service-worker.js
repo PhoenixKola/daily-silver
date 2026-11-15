@@ -1,28 +1,34 @@
-// The complete release is cached at install, including all curated sprites.
-const CACHE='daily-silver-6-recap-jump-v1';
+// Offline cache. The version comes from core-manifest.json (a content hash generated at build time),
+// so every new release installs a fresh cache and old ones are removed on activation.
 const PREFIX='daily-silver-';
-const CORE=['./','./index.html','./src/app.js','./src/backup.js','./src/engine.js','./src/data.js','./src/entrances.js','./src/matchups.js','./src/replay.js','./src/extra-species.js','./src/sound.js','./src/scene.js','./src/sprites.js','./src/style.css','./src/cockpit.css','./assets/art/summit-night.png','./assets/art/summit-rival.png','./assets/art/daily-silver-mark-96.png','./assets/art/daily-silver-mark-192.png','./assets/art/daily-silver-mark-512.png','./assets/sprites/crystal/precache.json','./manifest.webmanifest'];
 self.addEventListener('install',e=>e.waitUntil((async()=>{
- const cache=await caches.open(CACHE);
- const list=await (await fetch('./assets/sprites/crystal/precache.json')).json();
- await cache.addAll(CORE);
- for(let i=0;i<list.length;i+=40)await cache.addAll(list.slice(i,i+40));
+ const manifest=await (await fetch('./core-manifest.json',{cache:'no-store'})).json();
+ const sprites=await (await fetch('./assets/sprites/crystal/precache.json',{cache:'no-store'})).json();
+ const cache=await caches.open(PREFIX+manifest.version);
+ await cache.addAll(['./',...manifest.files,'./core-manifest.json','./assets/sprites/crystal/precache.json']);
+ for(let i=0;i<sprites.length;i+=40)await cache.addAll(sprites.slice(i,i+40));
  await self.skipWaiting();
 })()));
-self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k.startsWith(PREFIX)&&k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));
+self.addEventListener('activate',e=>e.waitUntil((async()=>{
+ const manifest=await (await fetch('./core-manifest.json',{cache:'no-store'}).catch(()=>null))?.json?.().catch(()=>null);
+ const keep=manifest?PREFIX+manifest.version:null;
+ const keys=await caches.keys();
+ // Only delete older caches when the current one exists, so an offline activation never empties the cache.
+ if(keep&&keys.includes(keep))await Promise.all(keys.filter(k=>k.startsWith(PREFIX)&&k!==keep).map(k=>caches.delete(k)));
+ await self.clients.claim();
+})()));
 self.addEventListener('fetch',e=>{
  if(e.request.method!=='GET'||new URL(e.request.url).origin!==self.location.origin)return;
  e.respondWith((async()=>{
-  const cache=await caches.open(CACHE);
-  const cached=await cache.match(e.request);
-  if(cached&&new URL(e.request.url).pathname.includes('/assets/'))return cached;
+  const cached=await caches.match(e.request);
+  const path=new URL(e.request.url).pathname;
+  if(cached&&path.includes('/assets/'))return cached;
   try{
    const response=await fetch(e.request);
-   if(response.ok&&response.type==='basic')await cache.put(e.request,response.clone());
-   if(response.ok)return response;
-   return cached||response;
+   if(response.ok&&response.type==='basic'){const keys=(await caches.keys()).filter(k=>k.startsWith(PREFIX)).sort();const target=keys[keys.length-1];if(target)(await caches.open(target)).put(e.request,response.clone())}
+   return response.ok?response:(cached||response);
   }catch{
-   return cached||(e.request.mode==='navigate'?await cache.match('./index.html'):null)||Response.error();
+   return cached||(e.request.mode==='navigate'?await caches.match('./index.html'):null)||Response.error();
   }
  })());
 });

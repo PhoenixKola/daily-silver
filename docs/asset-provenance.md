@@ -1,13 +1,20 @@
 # Asset provenance
 
-| Asset | Source | Rights and use |
-| --- | --- | --- |
-| `assets/art/summit-night.png` | Generated for Daily Silver with OpenAI Image Generation, 2026-11-04 | Original scenery plate created for this project; no text, characters or remote imagery. |
-| `assets/art/summit-rival.png` | Original winter challenger generated for Daily Silver with OpenAI Image Generation, 2026-11-04; isolated and resized for the pixel-art canvas | Original back-facing trainer in winter clothing; cropped onto transparency and sized to the distant figure in the home scene. |
-| `assets/art/daily-silver-mark-{96,192,512}.png` | Generated for Daily Silver with OpenAI Image Generation, 2026-11-04; resized with nearest-neighbor sampling | Original transparent mountain insignia and summit star used in the brand, favicon and installed app icons. |
-| `assets/favicon.svg` | Pre-existing in-repository SVG | Retained as a legacy file; the active favicon and installed app icons use the generated PNG insignia. |
-| `src/scene.js` and `src/cockpit.css` | Original code in this repository | Procedural snow, combat effects, sprite staging and interface treatments. |
-| `assets/sprites/crystal/{front,back}/*.png` | Pre-existing Crystal era Pokémon sprites | Third-party copyrighted franchise artwork. The game is unofficial and noncommercial; no ownership or commercial redistribution rights are claimed. |
-| Synthesized soundtrack and action effects | Pre-existing `src/sound.js` | Generated in browser with Web Audio; no external recordings or network audio. |
+All new art was generated on 2026-11-15 with OpenAI image generation through the project-local Codex bridge (`tools/codex-imagegen/`, Codex CLI 0.167.0-alpha.3.2, invoking model `gpt-6.1-sol`, ChatGPT sign-in, no API key). The internal image model is not reported by Codex and is not claimed here. Raw generations were processed with `tools/art-lab.mjs` (integer median downscale to the 768px game lattice, magenta/black keying, crop, parallax padding, shape slicing).
 
-The generated scenery is referenced by `src/scene.js`, `src/app.js`, and `src/cockpit.css`, and included in the static build. All gameplay assets load from the local release. The service worker pre-caches both sprite directions for the curated 135 species.
+| Asset | Source | Use |
+| --- | --- | --- |
+| `assets/art/summit/sky.png`, `sky-last-light.png` | Generated, processed | Parallax sky layers (night and Last Light stage). |
+| `assets/art/summit/ridges.png`, `ground.png`, `foreground.png` | Generated on a magenta key, processed to alpha | Ridges, battlefield ground plane, foreground rocks. |
+| `assets/art/summit/aurora.png`, `fog.png` | Generated on black, converted to alpha | Aurora ribbons (column-wave animated) and drifting mist. |
+| `assets/art/summit/dawn.png`, `aftermath.png` | Generated from the chosen direction | Victory dawn and defeat storm-aftermath scenes, result card backdrops. |
+| `assets/art/summit/challenger.png`, `rival-front.png` | Generated original silhouettes on a magenta key | Opening cinematic and home screen. They are original designs, not franchise artwork. |
+| `assets/art/fx/{fire,water,electric,psychic,drain,snow,impact,ice-barrier,vines,status,light}.png` | Generated on black, sliced into uniform 240px cells | Shape library drawn by `src/pres/fx.js` and `src/pres/conditions.js` (scaled, rotated and faded in code; not timed animation sheets). |
+| `assets/art/daily-silver-mark-{96,192,512}.png` | Generated 2026-11-04 | Insignia and app icons. |
+| `art-src/env-direction-A-chosen.png` | Generated exploration, chosen direction | Reference image for the layer kit. |
+| `assets/sprites/crystal/{front,back}/*.png` | Pre-existing Crystal era sprites | Third-party franchise artwork, unchanged, never replaced by generated art. Unofficial, noncommercial. |
+| Music and effects | `src/sound.js` | Synthesised in the browser with Web Audio; no recordings or samples. |
+
+Prompts, the generation log and the style bible are kept locally in `art-src/` but are git-ignored by request. The three exploration directions that were not chosen (`dir-B`, `dir-C`) live only in the ignored `.scratch/` folder.
+
+Removed in this release: `summit-night.png` and `summit-rival.png` (replaced by the kit above).

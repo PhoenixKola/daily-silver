@@ -1,3 +1,4 @@
+import {validateReplay} from './recorder.js';
 // Local-only import validation. This module never performs storage writes itself.
 const DATE=/^\d{4}-\d{2}-\d{2}$/;
 const validDate=(date)=>typeof date==='string'&&DATE.test(date)&&!Number.isNaN(Date.parse(date+'T00:00:00Z'))&&new Date(date+'T00:00:00Z').toISOString().slice(0,10)===date;
@@ -18,6 +19,11 @@ export function validateBackup(text){
    else if(name==='fx-rate'){if(![.5,1,1.5,2,3].includes(value))throw Error('Invalid animation speed.');}
    else if(name==='volume'){if(typeof value!=='number'||!Number.isFinite(value)||value<.05||value>1)throw Error('Invalid volume level.');}
    else if(name==='music-level'){if(typeof value!=='number'||!Number.isFinite(value)||value<0||value>1)throw Error('Invalid music level.');}
+   else if(name==='effects-level'){if(typeof value!=='number'||!Number.isFinite(value)||value<0||value>1)throw Error('Invalid effects level.');}
+   else if(name==='reduced-motion'){if(!['auto','on','off'].includes(value))throw Error('Invalid motion setting.');}
+   else if(name==='visual-intensity'){if(!['full','reduced','minimal'].includes(value))throw Error('Invalid visual intensity.');}
+   else if(name==='replay-index'){if(!Array.isArray(value)||value.length>20||!value.every(id=>typeof id==='string'&&id.length<=30))throw Error('Invalid replay index.');}
+   else if(name.startsWith('replay:')){try{validateReplay(value)}catch(e){throw Error('Invalid recorded replay.')}}
    else if(name==='high-contrast'){if(typeof value!=='boolean')throw Error('Invalid contrast setting.');}
    else if(name==='sound-enabled'){if(typeof value!=='boolean')throw Error('Invalid sound setting.');}
    else throw Error('Backup includes an unsupported setting: '+name);
