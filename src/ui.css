@@ -297,3 +297,7 @@ svg{width:20px;height:20px;flex:none;fill:none;stroke:currentColor;stroke-width:
 ::view-transition-group(stage){animation-duration:.25s}
 
 @media (min-width:521px){@container stage (max-width:620px){.plate-side{display:none}.plate{width:clamp(128px,38%,200px)}.plate-name{font-size:12px}}}
+
+/* pointer cursor on every interactive control */
+button:not(:disabled),label,select,summary,[role="button"],input[type="checkbox"],input[type="radio"],input[type="range"],.seg span,.switch,.switch i,.move-main:not(:disabled),.move-info,.team-mon,.mon-head{cursor:pointer}
+button:disabled,.move-main:disabled{cursor:not-allowed}
