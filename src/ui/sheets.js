@@ -189,7 +189,8 @@ function bindDropdowns(root){
  for(const dd of root.querySelectorAll('.dd')){
   const btn=dd.querySelector('.dd-btn'),list=dd.querySelector('.dd-list'),items=[...list.querySelectorAll('[role=option]')];
   const close=()=>{list.hidden=true;btn.setAttribute('aria-expanded','false')};
-  const open=()=>{list.hidden=false;btn.setAttribute('aria-expanded','true');(items.find(i=>i.getAttribute('aria-selected')==='true')||items[0]).focus()};
+  const place=()=>{const r=btn.getBoundingClientRect(),h=list.offsetHeight,below=innerHeight-r.bottom-12,up=below<h&&r.top>below;Object.assign(list.style,{position:'fixed',left:r.left+'px',width:r.width+'px',top:up?'auto':(r.bottom+6)+'px',bottom:up?(innerHeight-r.top+6)+'px':'auto',maxHeight:Math.max(160,(up?r.top:below)-8)+'px',overflow:'auto'})};
+  const open=()=>{list.hidden=false;place();addEventListener('resize',close,{once:true});$('sheet-body').addEventListener('scroll',close,{once:true});btn.setAttribute('aria-expanded','true');(items.find(i=>i.getAttribute('aria-selected')==='true')||items[0]).focus()};
   const pick=li=>{dd.dataset.value=li.dataset.v;dd.querySelector('.dd-label').textContent=li.textContent;items.forEach(i=>i.setAttribute('aria-selected',String(i===li)));close();btn.focus()};
   items.forEach(i=>i.tabIndex=-1);
   btn.addEventListener('click',()=>list.hidden?open():close());
