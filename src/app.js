@@ -436,7 +436,7 @@ function labSheetOpen(){
  labSheet({practice,foeNames:preview?.foe?.map(m=>m.name)||['Pikachu','Espeon','Snorlax','Venusaur','Charizard','Blastoise']});
  $('sheet-body').onclick=e=>{
   const b=e.target.closest('[data-act]');if(!b)return;
-  const focus=Number($('lab-focus')?.value||0),assist=$('lab-assist')?.checked!==false;
+  const focus=Number($('lab-focus')?.dataset.value||0),assist=$('lab-assist')?.checked!==false;
   if(b.dataset.act==='lab-resume'){forceClose();launchPractice({resume:true})}
   if(b.dataset.act==='lab-new'){forceClose();launchPractice({focus,assist})}
   if(b.dataset.act==='lab-retry-last'){forceClose();launchPractice({retryLast:true,assist})}

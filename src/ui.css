@@ -259,7 +259,7 @@ svg{width:20px;height:20px;flex:none;fill:none;stroke:currentColor;stroke-width:
  .move-main{padding-left:10px;min-height:92px}
  .move-info{width:38px}
  .command-tools{order:3;flex-basis:100%}
- .sheet{width:100%;max-height:92dvh;margin:auto 0 0;border-radius:16px 16px 0 0}
+ .sheet{position:fixed;left:0;right:0;bottom:0;top:auto;width:auto;max-width:none;max-height:92dvh;margin:0;border-radius:16px 16px 0 0}
 }
 @media (max-width:520px){
  .stage-frame{aspect-ratio:auto;overflow:visible;background:none;display:grid;grid-template-columns:1fr 1fr;gap:8px;align-content:start}
@@ -301,3 +301,15 @@ svg{width:20px;height:20px;flex:none;fill:none;stroke:currentColor;stroke-width:
 /* pointer cursor on every interactive control */
 button:not(:disabled),label,select,summary,[role="button"],input[type="checkbox"],input[type="radio"],input[type="range"],.seg span,.switch,.switch i,.move-main:not(:disabled),.move-info,.team-mon,.mon-head{cursor:pointer}
 button:disabled,.move-main:disabled{cursor:not-allowed}
+
+/* custom dropdown */
+.dd{position:relative;min-width:220px}
+.dd-btn{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;min-height:var(--tap);padding:0 14px 0 18px;border:0;border-radius:22px;background:var(--surface-2);font-weight:700}
+.dd-btn:hover{background:var(--surface-3)}
+.dd-btn svg{width:18px;height:18px;color:var(--muted);transition:transform .18s}
+.dd-btn[aria-expanded="true"] svg{transform:rotate(180deg)}
+.dd-list{position:absolute;right:0;top:calc(100% + 6px);z-index:5;min-width:100%;margin:0;padding:6px;list-style:none;background:var(--surface-3);border-radius:var(--r);box-shadow:0 12px 32px rgba(0,0,0,.45);animation:sheet-in .14s ease-out}
+.dd-list li{padding:10px 14px;border-radius:var(--r-sm);font-weight:600;white-space:nowrap;cursor:pointer;min-height:40px;display:flex;align-items:center}
+.dd-list li:hover,.dd-list li:focus{background:var(--surface-2);outline:none}
+.dd-list li[aria-selected="true"]{color:var(--accent)}
+.mon-id b .tag{margin-left:6px;vertical-align:2px}

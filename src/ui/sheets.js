@@ -2,6 +2,7 @@
 import {pkmnColor,alive,active,DAY_KEY} from '../engine.js';
 import {MOVES,effectiveness} from '../data.js';
 import {spriteHTML} from '../sprites.js';
+import {bestCounter} from '../matchups.js';
 import {moveFacts,itemEffect,estimateAttack,describeEstimate,typeAdvantageLabel,categoryOf} from '../moveinfo.js';
 import {conditionsOf,STATUS_LABEL,boostsOf} from '../pres/conditions.js';
 import {isSoundOn,getMasterVolume,getMusicLevel,getEffectsLevel} from '../sound.js';
@@ -96,10 +97,11 @@ export function monCardHTML(mon,index,{run,foe,open=false,side='p',party=false,i
  const top=est.filter(x=>x.e&&x.e.known&&x.e.max>0&&x.s.name!=='Explosion'&&x.s.name!=='Selfdestruct').sort((a,b)=>b.e.max-a.e.max)[0]?.s;
  const boosts=boostsOf(mon).map(b=>`${b.stat.toUpperCase()} ${b.stage>0?'+':''}${b.stage}`);
  const id=`mon-${side}-${index}`;
+ const counter=foe&&side==='p'&&mon.hp>0?bestCounter(mon,foe):null;
  return `<li class="mon-card" data-index="${index}" data-open="${open}">
   <button class="mon-head" type="button" aria-expanded="${open}" aria-controls="${id}-body" data-toggle="${index}">
    ${spriteHTML(mon,false)}
-   <span class="mon-id"><b>${esc(mon.name.toUpperCase())}</b><small>Lv.${mon.level} · ${mon.types.map(esc).join(' / ')}${isActive?' · In battle':''}${dead?' · Fainted':''}</small></span>
+   <span class="mon-id"><b>${esc(mon.name.toUpperCase())}${counter?` <span class="tag t-good" title="${esc(mon.name)} has a super-effective attack against ${esc(foe.name)}">COUNTER · ${esc(counter.name)} ×${counter.multiplier}</span>`:''}</b><small>Lv.${mon.level} · ${mon.types.map(esc).join(' / ')}${isActive?' · In battle':''}${dead?' · Fainted':''}</small></span>
    <span class="mon-hp">${mon.hp}/${mon.maxHp}<span class="hp-track"><span class="hp-fill ${hpClass(p)}" style="width:${p}%;display:block"></span></span></span>
   </button>
   <div class="mon-body" id="${id}-body" ${open?'':'inert'}><div class="mon-inner">
@@ -176,12 +178,31 @@ export function labSheet({practice,foeNames}){
   <p>Practice never touches your daily result. <b>Laboratory assist</b> adds undo, retry, move comparison and plain-language explanations. Official daily play never has them.</p>
   ${resume?`<h3>Saved practice</h3><p>Turn ${practice.turn}, ${alive(practice.player)}/6 allies, Red ${alive(practice.foe)}/6.${practice.lab?' (Laboratory)':''}</p><div class="actions" style="justify-content:flex-start"><button class="btn btn-primary" data-act="lab-resume" data-autofocus type="button" style="max-width:none">Resume practice</button></div>`:''}
   <h3>${resume?'Or start new (replaces the saved practice)':'Start practice'}</h3>
-  <div class="row"><label for="lab-focus">Opponent</label><span class="select-wrap"><select id="lab-focus"><option value="0">Full battle</option>${foeNames.map((n,i)=>i?`<option value="${i}">Start vs ${esc(n)}</option>`:'').join('')}</select></span></div>
+  <div class="row"><span id="l-focus">Opponent</span><div class="dd" id="lab-focus" data-value="0"><button type="button" class="dd-btn" aria-haspopup="listbox" aria-expanded="false" aria-labelledby="l-focus"><span class="dd-label">Full battle</span><svg aria-hidden="true"><use href="#i-chev"/></svg></button><ul class="dd-list" role="listbox" tabindex="-1" hidden><li role="option" data-v="0" aria-selected="true">Full battle</li>${foeNames.map((n,i)=>i?`<li role="option" data-v="${i}" aria-selected="false">Start vs ${esc(n)}</li>`:'').join('')}</ul></div></div>
   <div class="row"><label for="lab-assist">Laboratory assist (undo, compare, explain)</label><span class="switch"><input id="lab-assist" type="checkbox" checked><i></i></span></div>
   <div class="actions" style="justify-content:flex-start;margin-top:12px"><button class="btn ${resume?'btn-secondary':'btn-primary'}" data-act="lab-new" ${resume?'':'data-autofocus'} type="button" style="max-width:none">${resume?'Replace and start new':'Start practice'}</button>
   ${practice?`<button class="btn btn-secondary" data-act="lab-retry-last" type="button">Retry the same team and seed</button>`:''}</div>`);
+ bindDropdowns($('sheet-body'));
 }
 
+function bindDropdowns(root){
+ for(const dd of root.querySelectorAll('.dd')){
+  const btn=dd.querySelector('.dd-btn'),list=dd.querySelector('.dd-list'),items=[...list.querySelectorAll('[role=option]')];
+  const close=()=>{list.hidden=true;btn.setAttribute('aria-expanded','false')};
+  const open=()=>{list.hidden=false;btn.setAttribute('aria-expanded','true');(items.find(i=>i.getAttribute('aria-selected')==='true')||items[0]).focus()};
+  const pick=li=>{dd.dataset.value=li.dataset.v;dd.querySelector('.dd-label').textContent=li.textContent;items.forEach(i=>i.setAttribute('aria-selected',String(i===li)));close();btn.focus()};
+  items.forEach(i=>i.tabIndex=-1);
+  btn.addEventListener('click',()=>list.hidden?open():close());
+  list.addEventListener('click',e=>{const li=e.target.closest('[role=option]');if(li)pick(li)});
+  list.addEventListener('keydown',e=>{const i=items.indexOf(document.activeElement);
+   if(e.key==='ArrowDown'){e.preventDefault();items[Math.min(items.length-1,i+1)].focus()}
+   else if(e.key==='ArrowUp'){e.preventDefault();items[Math.max(0,i-1)].focus()}
+   else if(e.key==='Enter'||e.key===' '){e.preventDefault();if(items[i])pick(items[i])}
+   else if(e.key==='Escape'){e.preventDefault();e.stopPropagation();close();btn.focus()}
+   else if(e.key==='Tab')close()});
+  document.addEventListener('click',e=>{if(!dd.contains(e.target)&&!list.hidden)close()},{capture:true});
+ }
+}
 export function compareSheet(results,names){
  const rows=results.map((r,i)=>r.ok?`<li class="record"><header><b>${esc(names[i]||'Option '+(i+1))}</b><span>${r.first==='p'?'You move first':r.first==='e'?'Red moves first':''}</span></header>
   <small>Deals ${r.dealt} to ${esc(r.before.foe.name)}${r.foeFainted>0?' (knockout)':''} · takes ${r.taken}${r.allyFainted>0?' (your ally faints)':''}</small>
