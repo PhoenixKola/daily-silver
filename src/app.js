@@ -91,11 +91,29 @@ function plateHTML(mon,team,activeIdx,field,label){
  <div class="hp"><span class="hp-label">HP</span><span class="hp-track"><span class="hp-fill ${hpClass(p)}" style="width:${p}%"></span></span><span class="hp-num">${mon.hp}/${mon.maxHp}</span></div>
  <div class="tags">${tags.join('')}</div>`;
 }
+const hpTweens=new WeakMap();
+function tweenNumber(el,from,to,max){
+ cancelAnimationFrame(hpTweens.get(el)||0);
+ if(from===to||reducedMotion()){el.textContent=`${to}/${max}`;return}
+ const t0=performance.now(),dur=650;
+ const step=now=>{const k=Math.min(1,(now-t0)/dur),v=Math.round(from+(to-from)*(1-Math.pow(1-k,3)));el.textContent=`${v}/${max}`;if(k<1)hpTweens.set(el,requestAnimationFrame(step))};
+ hpTweens.set(el,requestAnimationFrame(step));
+}
+// Rebuild a plate only when a different Pokémon takes the slot; otherwise update in place so HP drains smoothly.
+function renderPlate(el,mon,team,idx,field,label){
+ if(!mon)return;
+ const key=mon.name+':'+idx;
+ if(el.dataset.key!==key){el.innerHTML=plateHTML(mon,team,idx,field,label);el.dataset.key=key;el.dataset.hp=String(mon.hp);el.style.setProperty('--tc',pkmnColor(mon.types[0]));return}
+ const tmp=document.createElement('div');tmp.innerHTML=plateHTML(mon,team,idx,field,label);
+ const fill=el.querySelector('.hp-fill'),next=tmp.querySelector('.hp-fill');
+ fill.className=next.className;fill.style.width=next.style.width;
+ tweenNumber(el.querySelector('.hp-num'),Number(el.dataset.hp),mon.hp,mon.maxHp);el.dataset.hp=String(mon.hp);
+ el.querySelector('.tags').innerHTML=tmp.querySelector('.tags').innerHTML;el.querySelector('.plate-side').innerHTML=tmp.querySelector('.plate-side').innerHTML;
+}
 function renderHud(d){
  if(!d)return;
- const p=d.player[d.pActive],e=d.foe[d.eActive];
- $('plate-foe').innerHTML=plateHTML(e,d.foe,d.eActive,fieldOf(d,'e'),"Red's team");$('plate-foe').style.setProperty('--tc',pkmnColor(e?.types[0]));
- $('plate-ally').innerHTML=plateHTML(p,d.player,d.pActive,fieldOf(d,'p'),'Your team');$('plate-ally').style.setProperty('--tc',pkmnColor(p?.types[0]));
+ renderPlate($('plate-foe'),d.foe[d.eActive],d.foe,d.eActive,fieldOf(d,'e'),"Red's team");
+ renderPlate($('plate-ally'),d.player[d.pActive],d.player,d.pActive,fieldOf(d,'p'),'Your team');
 }
 function tacticalTag(slot,foe){
  const move=MOVES[slot.name],facts=moveFacts(slot.name),match=moveMatchup(slot,foe);

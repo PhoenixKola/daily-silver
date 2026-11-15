@@ -57,7 +57,7 @@ svg{width:20px;height:20px;flex:none;fill:none;stroke:currentColor;stroke-width:
 .hp{display:flex;align-items:center;gap:8px;margin-top:6px}
 .hp-label{font-size:11px;font-weight:800;color:var(--muted);letter-spacing:.08em}
 .hp-track{flex:1;height:8px;background:#26345a;border-radius:4px;overflow:hidden}
-.hp-fill{display:block;height:100%;background:var(--ok);width:100%;transition:width .36s steps(12,end)}
+.hp-fill{display:block;height:100%;background:var(--ok);width:100%;transition:width .7s cubic-bezier(.3,.7,.2,1),background-color .4s}
 .hp-fill.warn{background:#f0c75e}.hp-fill.danger{background:var(--danger)}
 .hp-num{font-size:12px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums;min-width:56px;text-align:right}
 .tags{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px;min-height:0}
@@ -259,7 +259,7 @@ svg{width:20px;height:20px;flex:none;fill:none;stroke:currentColor;stroke-width:
  .move-main{padding-left:10px;min-height:92px}
  .move-info{width:38px}
  .command-tools{order:3;flex-basis:100%}
- .sheet{position:fixed;left:0;right:0;bottom:0;top:auto;width:auto;max-width:none;max-height:92dvh;margin:0;border-radius:16px 16px 0 0}
+  .sheet{width:calc(100% - 32px);max-height:calc(100dvh - 32px);margin:auto;border-radius:16px}
 }
 @media (max-width:520px){
  .stage-frame{aspect-ratio:auto;overflow:visible;background:none;display:grid;grid-template-columns:1fr 1fr;gap:8px;align-content:start}
@@ -289,7 +289,7 @@ svg{width:20px;height:20px;flex:none;fill:none;stroke:currentColor;stroke-width:
  .home-overlay h1{font-size:20px}
  .team-list{grid-template-columns:repeat(3,1fr)}
 }
-@media (min-width:641px){.sheet{margin:auto}}
+
 
 /* motion */
 :root[data-motion="reduced"] *,:root[data-motion="reduced"] *::before,:root[data-motion="reduced"] *::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important}
@@ -303,13 +303,15 @@ button:not(:disabled),label,select,summary,[role="button"],input[type="checkbox"
 button:disabled,.move-main:disabled{cursor:not-allowed}
 
 /* custom dropdown */
-.dd{position:relative;min-width:220px}
+.dd{position:relative;min-width:220px;align-self:flex-start}
 .dd-btn{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;min-height:var(--tap);padding:0 14px 0 18px;border:0;border-radius:22px;background:var(--surface-2);font-weight:700}
 .dd-btn:hover{background:var(--surface-3)}
 .dd-btn svg{width:18px;height:18px;color:var(--muted);transition:transform .18s}
 .dd-btn[aria-expanded="true"] svg{transform:rotate(180deg)}
-.dd-list{position:absolute;right:0;top:calc(100% + 6px);z-index:5;min-width:100%;margin:0;padding:6px;list-style:none;background:var(--surface-3);border-radius:var(--r);box-shadow:0 12px 32px rgba(0,0,0,.45);animation:sheet-in .14s ease-out}
+.dd-list{position:static;margin-top:6px!important;min-width:100%;margin:0;padding:6px;list-style:none;background:var(--surface-3);border-radius:var(--r);box-shadow:0 12px 32px rgba(0,0,0,.45);animation:sheet-in .14s ease-out}
 .dd-list li{padding:10px 14px;border-radius:var(--r-sm);font-weight:600;white-space:nowrap;cursor:pointer;min-height:40px;display:flex;align-items:center}
 .dd-list li:hover,.dd-list li:focus{background:var(--surface-2);outline:none}
 .dd-list li[aria-selected="true"]{color:var(--accent)}
 .mon-id b .tag{margin-left:6px;vertical-align:2px}
+
+.sheet.tall{height:min(calc(100dvh - 32px),820px)}

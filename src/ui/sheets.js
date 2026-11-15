@@ -12,8 +12,8 @@ import {$,esc,icon,typeChip,catChip,pct,hpClass,transition} from './dom.js';
 
 let opener=null,onCloseCb=null,lockedOpen=false;
 const sheet=()=>$('sheet');
-export function openSheet(title,html,{onClose,locked=false,wide=false}={}){
- const el=sheet();
+export function openSheet(title,html,{onClose,locked=false,wide=false,tall=false}={}){
+ const el=sheet();el.classList.toggle('tall',tall);
  $('sheet-title').textContent=title;$('sheet-body').innerHTML=html;
  onCloseCb=onClose||null;lockedOpen=locked;
  $('sheet-close').hidden=locked;
@@ -119,7 +119,7 @@ export function dossierBody(run,{foe,side='p',party=false,openIndex=-1,mustSwitc
 }
 export function dossierSheet(run,{openIndex=0,party=false,foe,mustSwitch=false,title,onSwitch}={}){
  const opponent=foe||(run.phase==='battle'?run.foe[run.eActive]:run.foe[0]);
- openSheet(title||(party?'Party':'Team dossier'),dossierBody(run,{foe:opponent,party,openIndex,mustSwitch}),{locked:mustSwitch});
+ openSheet(title||(party?'Party':'Team dossier'),dossierBody(run,{foe:opponent,party,openIndex,mustSwitch}),{locked:mustSwitch,tall:true});
  const body=$('sheet-body');
  body.onclick=e=>{
   const sw=e.target.closest('[data-switch]');
