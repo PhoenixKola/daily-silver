@@ -16,9 +16,10 @@ export function openSheet(title,html,{onClose,locked=false,wide=false}={}){
  $('sheet-title').textContent=title;$('sheet-body').innerHTML=html;
  onCloseCb=onClose||null;lockedOpen=locked;
  $('sheet-close').hidden=locked;
- if(!el.open){opener=document.activeElement;transition(()=>el.showModal())}
+ if(!el.open){opener=document.activeElement;el.showModal()}
  $('sheet-body').scrollTop=0;
- requestAnimationFrame(()=>{const target=$('sheet-body').querySelector('[data-autofocus]')||(locked?$('sheet-body').querySelector('button:not([disabled])'):$('sheet-close'));target?.focus?.()});
+ const target=$('sheet-body').querySelector('[data-autofocus]')||(locked?$('sheet-body').querySelector('button:not([disabled])'):$('sheet-close'));target?.focus?.({preventScroll:true});
+ $('sheet-body').scrollTop=0;
 }
 export function closeSheet(){if(sheet().open&&!lockedOpen)sheet().close()}
 export function forceClose(){lockedOpen=false;if(sheet().open)sheet().close()}
@@ -27,7 +28,7 @@ export function initSheet(){
  $('sheet-close').addEventListener('click',closeSheet);
  sheet().addEventListener('cancel',e=>{if(lockedOpen)e.preventDefault()});
  sheet().addEventListener('close',()=>{
-  const cb=onCloseCb;onCloseCb=null;lockedOpen=false;
+  const cb=onCloseCb;onCloseCb=null;lockedOpen=false;$('sheet-body').innerHTML='';$('sheet-body').onclick=null;$('sheet-body').onkeydown=null;
   if(opener&&document.contains(opener)&&!opener.disabled&&!opener.hidden)opener.focus();opener=null;cb?.();
  });
  sheet().addEventListener('click',e=>{
@@ -101,12 +102,12 @@ export function monCardHTML(mon,index,{run,foe,open=false,side='p',party=false,i
    <span class="mon-id"><b>${esc(mon.name.toUpperCase())}</b><small>Lv.${mon.level} · ${mon.types.map(esc).join(' / ')}${isActive?' · In battle':''}${dead?' · Fainted':''}</small></span>
    <span class="mon-hp">${mon.hp}/${mon.maxHp}<span class="hp-track"><span class="hp-fill ${hpClass(p)}" style="width:${p}%;display:block"></span></span></span>
   </button>
-  <div class="mon-body" id="${id}-body" ${open?'':'hidden'}>
+  <div class="mon-body" id="${id}-body" ${open?'':'inert'}><div class="mon-inner">
    <div class="fact"><b>Held item</b><span>${esc(mon.item==='(used)'?'Consumed':mon.item||'None')} — ${esc(itemEffect(mon.item))}</span></div>
    ${conds.length||boosts.length?`<div class="fact"><b>Condition</b><span>${[...conds.map(c=>STATUS_LABEL[c]||({seed:'Seeded',curse:'Cursed',trap:'Trapped',substitute:'Substitute'}[c]||c)),...boosts].map(esc).join(' · ')}</span></div>`:''}
    <ul class="mini-moves">${mon.moves.map(s=>moveRow(s,mon,foe,run,side,s===top)).join('')}</ul>
    ${party?`<div class="mon-actions"><button class="btn btn-primary" style="min-height:48px;max-width:none" type="button" data-switch="${index}" ${dead||isActive?'disabled':''}>${dead?'Fainted':isActive?'Already in battle':`Send out ${esc(mon.name)}`}</button></div>`:''}
-  </div>
+  </div></div>
  </li>`;
 }
 export function dossierBody(run,{foe,side='p',party=false,openIndex=-1,mustSwitch=false}={}){
@@ -123,15 +124,15 @@ export function dossierSheet(run,{openIndex=0,party=false,foe,mustSwitch=false,t
   if(sw){onSwitch?.(Number(sw.dataset.switch));return}
   const t=e.target.closest('[data-toggle]');if(!t)return;
   const card=t.closest('.mon-card'),open=card.dataset.open!=='true';
-  body.querySelectorAll('.mon-card').forEach(c=>{c.dataset.open='false';c.querySelector('.mon-body').hidden=true;c.querySelector('[data-toggle]').setAttribute('aria-expanded','false')});
-  if(open){card.dataset.open='true';card.querySelector('.mon-body').hidden=false;t.setAttribute('aria-expanded','true');card.scrollIntoView({block:'nearest'})}
+  body.querySelectorAll('.mon-card').forEach(c=>{c.dataset.open='false';c.querySelector('.mon-body').setAttribute('inert','');c.querySelector('[data-toggle]').setAttribute('aria-expanded','false')});
+  if(open){card.dataset.open='true';card.querySelector('.mon-body').removeAttribute('inert');t.setAttribute('aria-expanded','true');setTimeout(()=>card.scrollIntoView({block:'nearest',behavior:'smooth'}),240)}
  };
  body.onkeydown=e=>{
   if(!['ArrowDown','ArrowUp'].includes(e.key))return;
   const heads=[...body.querySelectorAll('[data-toggle]')],i=heads.indexOf(document.activeElement);
   if(i<0)return;e.preventDefault();heads[(i+(e.key==='ArrowDown'?1:-1)+heads.length)%heads.length].focus();
  };
- if(openIndex>=0)requestAnimationFrame(()=>body.querySelector(`.mon-card[data-index="${openIndex}"] [data-toggle]`)?.focus());
+ if(openIndex>=0)body.querySelector(`.mon-card[data-index="${openIndex}"] [data-toggle]`)?.focus({preventScroll:true});body.scrollTop=0;
 }
 
 // ---------- single move details ----------
